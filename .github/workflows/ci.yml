@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    name: Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Compile the application
+        run: python -m py_compile garage_panel.py
+      - name: Build distributions
+        run: |
+          python -m pip install --upgrade build
+          python -m build
+      - name: Install the wheel and verify vendored assets
+        run: |
+          python -m pip install dist/*.whl
+          cd /tmp
+          python -c "import garage_panel; from pathlib import Path; assert Path(garage_panel.STATIC_DIR).is_dir(), garage_panel.STATIC_DIR"
+
+  dashboard:
+    name: Embedded dashboard JavaScript
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - name: Syntax-check the embedded dashboard JavaScript
+        run: >-
+          python -c "from pathlib import Path; source = Path('garage_panel.py').read_text(); start = source.index('<script>') + len('<script>'); end = source.index('</script>', start); Path('/tmp/dashboard.js').write_text(source[start:end])"
+          && node --check /tmp/dashboard.js
+
+  hygiene:
+    name: Public repository hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Check whitespace and public documentation
+        run: |
+          git diff --check $(git hash-object -t tree /dev/null) HEAD
+          ! rg -i -e 's3\.rowe\.lol|100\.70\.111\.120|pikapods-rowemonitor|PANEL_USER=john|WDS100T2G0A|TOSHIBA-HDWG180' README.md CHANGELOG.md garage_panel.py

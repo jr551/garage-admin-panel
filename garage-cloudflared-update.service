@@ -1,0 +1,12 @@
+[Unit]
+Description=Update Cloudflared tunnel binary for Garage
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/cloudflared update
+ExecStartPost=/bin/systemctl restart garage-cloudflared.service
+# cloudflared uses status 11 to report that it replaced itself successfully.
+SuccessExitStatus=11
+TimeoutStartSec=10min

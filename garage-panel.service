@@ -1,0 +1,19 @@
+[Unit]
+Description=Garage S3 admin panel
+After=garage.service
+Wants=garage.service
+
+[Service]
+EnvironmentFile=/etc/garage-panel.env
+ExecStart=/usr/bin/python3 /opt/garage-panel/garage_panel.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+# The sign-in audit log lives here and ProtectSystem=strict would block it.
+ReadWritePaths=/var/lib/garage-panel
+
+[Install]
+WantedBy=multi-user.target
