@@ -2435,24 +2435,30 @@ DOCS_PAGE = r"""<!doctype html>
 </script>
 </body></html>"""
 
-
 LOGIN_PAGE = r"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Sign in · Garage admin</title>
 <style>
- :root{color-scheme:dark light;font-family:system-ui,-apple-system,sans-serif}
+ :root{color-scheme:dark;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
  *{box-sizing:border-box}
- body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0f1620;color:#eef3f8}
- form{width:min(360px,92vw);background:#17222f;border:1px solid #ffffff18;border-radius:16px;padding:26px;box-shadow:0 16px 44px #0006}
- h1{font-size:21px;margin:0 0 4px} .muted{color:#9fb0c3;font-size:13px}
- label{display:block;margin-top:14px;font-size:13px;color:#9fb0c3}
- input{width:100%;margin-top:5px;padding:11px 13px;border-radius:10px;border:1px solid #ffffff28;background:#0d1622;color:#eef3f8;font-size:15px}
- button{width:100%;margin-top:18px;padding:12px;border:0;border-radius:10px;background:#347ed4;color:#fff;font-weight:700;font-size:15px;cursor:pointer}
- .err{margin-top:12px;color:#ff9c9c;font-weight:600;font-size:14px}
+ body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0b1119;color:#e8eef5}
+ form{width:min(380px,92vw);background:#121a26;border:1px solid #ffffff14;border-radius:14px;padding:30px 28px 26px;box-shadow:0 18px 50px #00000066}
+ .brand{display:flex;align-items:center;gap:10px;margin-bottom:2px}
+ h1{font-size:19px;margin:0;letter-spacing:-.01em;font-weight:700}
+ .muted{color:#8ea0b3;font-size:13px;line-height:1.5}
+ label{display:block;margin-top:16px;font-size:12.5px;color:#8ea0b3;font-weight:600;letter-spacing:.02em}
+ input{width:100%;margin-top:6px;padding:11px 13px;border-radius:9px;border:1px solid #ffffff22;background:#0c1420;color:#e8eef5;font-size:15px;outline:none;transition:border-color .15s,box-shadow .15s}
+ input:focus{border-color:#4a90e2;box-shadow:0 0 0 3px #347ed42e}
+ button{width:100%;margin-top:20px;padding:12px;border:0;border-radius:9px;background:#4a90e2;color:#fff;font-weight:700;font-size:15px;cursor:pointer;transition:background .15s}
+ button:hover{background:#5da1ef}
+ .err{margin-top:14px;color:#ff9c9c;font-weight:600;font-size:13.5px;min-height:1em}
 </style></head><body>
 <form method="post" action="/login">
-  <h1>Garage admin</h1>
+  <div class="brand">
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 8.5 12 4l8 4.5v7L12 20l-8-4.5v-7Z" stroke="#4a90e2" stroke-width="1.7" stroke-linejoin="round"/><path d="M4 8.5 12 13l8-4.5M12 13v7" stroke="#4a90e2" stroke-width="1.7" stroke-linejoin="round"/></svg>
+    <h1>Garage admin</h1>
+  </div>
   <div class="muted">Private access required.</div>
   <label>Username<input name="user" autocomplete="username" autofocus></label>
   <label>Password<input name="password" type="password" autocomplete="current-password"></label>
@@ -2461,123 +2467,172 @@ LOGIN_PAGE = r"""<!doctype html>
 </form>
 </body></html>"""
 
-
 PAGE = r"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Garage admin</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none'%3E%3Cpath d='M4 8.5 12 4l8 4.5v7L12 20l-8-4.5v-7Z' stroke='%234a90e2' stroke-width='1.7' stroke-linejoin='round'/%3E%3Cpath d='M4 8.5 12 13l8-4.5M12 13v7' stroke='%234a90e2' stroke-width='1.7' stroke-linejoin='round'/%3E%3C/svg%3E">
+<meta name="theme-color" content="#0c1219">
 <style>
- :root{color-scheme:dark light;font-family:system-ui,-apple-system,sans-serif}
+ :root{
+   --bg:#0c1219; --surface:#131c29; --surface-2:#0f1722;
+   --line:#ffffff14; --line-strong:#ffffff26;
+   --text:#e8eef5; --muted:#8ea0b3;
+   --accent:#4a90e2; --accent-hover:#5da1ef;
+   --ok:#3fd68f; --warn:#f1a24b; --bad:#ff767e;
+   --radius:12px; --radius-sm:9px;
+   color-scheme:dark;
+   font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+ }
  *{box-sizing:border-box}
- body{margin:0;background:#0f1620;color:#eef3f8}
- main{width:min(1280px,100%);margin:auto;padding:24px}
- h1{font-size:26px;margin:0 0 4px} h2{font-size:18px;margin:26px 0 10px}
- .muted{color:#9fb0c3;font-size:13px}
- section{background:#17222f;border:1px solid #ffffff18;border-radius:14px;padding:16px;margin-top:14px}
- .page-header{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;padding:4px 2px 8px}
- .page-header h1{letter-spacing:-.02em}
- .header-actions{display:flex;gap:10px;align-items:center;white-space:nowrap}
- .summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:12px}
- .stat{background:#17222f;border:1px solid #ffffff18;border-radius:12px;padding:13px 14px}
- .stat-label{color:#9fb0c3;font-size:12px}.stat-value{font-size:21px;font-weight:700;margin-top:4px}
- .settings-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
- .setting{padding:11px 12px;border:1px solid #ffffff14;border-radius:10px;background:#101a26;min-width:0}
- .setting-label{color:#9fb0c3;font-size:12px;margin-bottom:4px}.setting code{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
- .status{display:inline-flex;align-items:center;gap:6px;font-weight:700}.status::before{content:"";width:8px;height:8px;border-radius:50%;background:#9fb0c3}.status.ok::before{background:#35d07f}.status.bad::before{background:#ff767e}
+ body{margin:0;background:var(--bg);color:var(--text);font-size:14px;line-height:1.45}
+ main{width:min(1240px,100%);margin:auto;padding:0 24px 48px}
+ h1{font-size:20px;margin:0;letter-spacing:-.02em;font-weight:700}
+ h2{font-size:15.5px;margin:0;font-weight:650;letter-spacing:-.01em}
+ a.plainlink{color:var(--accent);text-decoration:none;font-weight:600;font-size:13.5px}
+ a.plainlink:hover{text-decoration:underline}
+ .muted{color:var(--muted);font-size:13px}
+
+ /* ---- top bar ---- */
+ .topbar{position:sticky;top:0;z-index:10;background:#0c1219ee;backdrop-filter:blur(6px);border-bottom:1px solid var(--line)}
+ .topbar-inner{width:min(1240px,100%);margin:auto;padding:10px 24px;display:flex;justify-content:space-between;align-items:center;gap:16px}
+ .brand{display:flex;align-items:center;gap:10px;min-width:0}
+ .brand .subtitle{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+ .top-actions{display:flex;gap:16px;align-items:center;white-space:nowrap}
+ .refreshed{color:var(--muted);font-size:11.5px}
+
+ /* ---- summary ---- */
+ .summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:16px}
+ .stat{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:13px 15px}
+ .stat-label{color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+ .stat-value{font-size:22px;font-weight:700;margin-top:3px;font-variant-numeric:tabular-nums}
+
+ /* ---- sections ---- */
+ section{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-top:14px}
  .section-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
- .section-head h2{margin-top:0;margin-bottom:4px}.section-head p{margin:0}
+ .section-head h2{margin-top:0}
+ .section-head p{margin:3px 0 0}
  section > h2{display:flex;align-items:center;justify-content:space-between;gap:10px}
  .section-toggle{flex:0 0 auto}
  .section-collapsible.collapsed > :not(h2):not(.section-head){display:none}
+ .settings-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+ .setting{padding:11px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-2);min-width:0}
+ .setting-label{color:var(--muted);font-size:11.5px;margin-bottom:4px;font-weight:600}
+ .setting code{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+
+ /* ---- status ---- */
+ .status{display:inline-flex;align-items:center;gap:6px;font-weight:600}
+ .status::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--muted)}
+ .status.ok::before{background:var(--ok)}.status.bad::before{background:var(--bad)}
+
+ /* ---- tables ---- */
  .table-scroll{overflow-x:auto;margin:0 -4px;padding:0 4px}
- #buckets{min-width:1500px}#archivedBuckets{min-width:760px}
- #browserFiles{min-width:760px}
- #buckets th:last-child,#buckets td:last-child{position:sticky;right:0;background:#17222f;box-shadow:-7px 0 10px #0f1620}
- table{width:100%;border-collapse:collapse;font-size:14px}
- th,td{text-align:left;padding:8px 6px;border-bottom:1px solid #ffffff14;vertical-align:top}
- th{color:#9fb0c3;font-weight:600}
- code{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:#8dc8ff;word-break:break-all}
- input{padding:9px 11px;border-radius:9px;border:1px solid #ffffff28;background:#0d1622;color:#eef3f8}
- button{padding:9px 14px;border:0;border-radius:9px;background:#347ed4;color:#fff;font-weight:600;cursor:pointer}
- button.secondary{background:#3b4a5c}
- button.danger{background:#b94b52}
- button.small{padding:5px 8px;font-size:11px;white-space:nowrap}
- .row{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-top:10px}
- .notice{margin-top:10px;font-weight:600;color:#8dc8ff;min-height:20px}
- .secret{margin-top:10px;padding:12px;border-radius:10px;background:#123524;border:1px solid #35d07f66}
- .err{color:#ff9c9c}
- .pill{font-size:11px;padding:2px 7px;border-radius:99px;background:#2b3a4d}
- .tag{display:inline-block;white-space:nowrap;font-size:11px;padding:2px 7px;border-radius:99px;background:#31435a;margin:0 4px 4px 0}
+ #buckets{min-width:1500px}#archivedBuckets{min-width:760px}#browserFiles{min-width:760px}
+ table{width:100%;border-collapse:collapse;font-size:13.5px}
+ th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+ th{color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;position:sticky;top:0;background:var(--surface)}
+ tbody tr:hover td{background:#ffffff06}
+ #buckets th:last-child,#buckets td:last-child{position:sticky;right:0;background:var(--surface);box-shadow:-8px 0 10px -6px #00000080}
+ code{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:#79b8ec;word-break:break-all}
+
+ /* ---- controls ---- */
+ input,select{padding:9px 11px;border-radius:var(--radius-sm);border:1px solid var(--line-strong);background:var(--surface-2);color:var(--text);outline:none;transition:border-color .15s,box-shadow .15s}
+ input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px #347ed42e}
+ button{padding:9px 15px;border:0;border-radius:var(--radius-sm);background:var(--accent);color:#fff;font-weight:600;font-size:13.5px;cursor:pointer;transition:background .15s;font-family:inherit}
+ button:hover{background:var(--accent-hover)}
+ button.secondary{background:#33445a}
+ button.secondary:hover{background:#40536d}
+ button.danger{background:#b04a51}
+ button.danger:hover{background:#c25a61}
+ button.small{padding:4px 9px;font-size:11.5px;white-space:nowrap}
+ button:disabled{opacity:.55;cursor:not-allowed}
+ button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+ .row{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-top:12px}
+
+ /* ---- feedback ---- */
+ .notice{margin:12px 0 0;font-weight:600;color:var(--accent);min-height:20px;font-size:13.5px}
+ .notice.err{color:var(--bad)}
+ .secret{margin-top:10px;padding:13px;border-radius:var(--radius-sm);background:#0f2c1e;border:1px solid #35d07f59;display:grid;gap:4px}
+ .err{color:var(--bad)}
+ .tag{display:inline-block;white-space:nowrap;font-size:11px;padding:2px 8px;border-radius:99px;background:#2c3d52;color:#b9cbe0;margin:0 4px 4px 0}
+
+ /* ---- bucket widgets ---- */
  .usage-widget{display:flex;align-items:center;gap:9px;min-width:180px}
- .usage-donut{width:48px;height:48px;flex:0 0 48px;border-radius:50%;display:grid;place-items:center;background:conic-gradient(#35d07f var(--usage),#2a394a 0);position:relative;box-shadow:0 0 0 1px #ffffff14,0 3px 10px #0003}
- .usage-donut::after{content:"";position:absolute;inset:6px;border-radius:50%;background:#17222f}
- .usage-donut strong{position:relative;z-index:1;font-size:10px;color:#eef3f8}
+ .usage-donut{width:46px;height:46px;flex:0 0 46px;border-radius:50%;display:grid;place-items:center;background:conic-gradient(var(--ok) var(--usage),#28374a 0);position:relative;box-shadow:0 0 0 1px var(--line)}
+ .usage-donut::after{content:"";position:absolute;inset:6px;border-radius:50%;background:var(--surface)}
+ .usage-donut strong{position:relative;z-index:1;font-size:9.5px;color:var(--text);font-variant-numeric:tabular-nums}
  .usage-copy{min-width:0}
  .usage-copy strong{display:block;font-size:13px}
- .usage-bar{height:5px;width:112px;margin-top:5px;border-radius:99px;background:#0d1622;overflow:hidden;border:1px solid #ffffff18}
- .usage-bar span{display:block;height:100%;min-width:2px;border-radius:99px;background:linear-gradient(90deg,#35d07f,#8dc8ff)}
- .usage-unknown .usage-donut{background:#2a394a}
+ .usage-bar{height:4px;width:112px;margin-top:5px;border-radius:99px;background:var(--surface-2);overflow:hidden;border:1px solid var(--line)}
+ .usage-bar span{display:block;height:100%;min-width:2px;border-radius:99px;background:linear-gradient(90deg,var(--ok),#79b8ec)}
+ .usage-unknown .usage-donut{background:#28374a}
  .latest-file{display:flex;align-items:center;gap:6px;max-width:250px}
  .latest-file code{display:block;max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
- .latest-clock{font-size:18px;line-height:1;flex:0 0 auto}
- .latest-clock.fresh{color:#35d07f}.latest-clock.stale{color:#f1a24b}
+ .latest-clock{font-size:17px;line-height:1;flex:0 0 auto}
+ .latest-clock.fresh{color:var(--ok)}.latest-clock.stale{color:var(--warn)}
  .latest-age{white-space:nowrap}
  .public-link{display:flex;gap:6px;align-items:flex-start;margin-bottom:6px;max-width:330px}
  .public-link code{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;word-break:normal}
- .bucket-open{background:transparent;color:#8dc8ff;padding:0;text-align:left;font-weight:700}
- .bucket-open:hover{text-decoration:underline}
- .bucket-name-actions{margin-top:6px}
+ .bucket-open{background:transparent;color:#79b8ec;padding:0;text-align:left;font-weight:650;font-size:14px}
+ .bucket-open:hover{text-decoration:underline;background:transparent}
+ .bucket-name-actions{margin-top:5px}
  .browser-key{max-width:420px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
  .key-reveal{margin-top:10px}
- select{min-width:240px;padding:9px 11px;border-radius:9px;border:1px solid #ffffff28;background:#0d1622;color:#eef3f8}
  #grantStatus{margin-top:10px;min-height:20px}
  .activity-detail{max-width:360px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
- .danger-panel{margin:12px 0;padding:13px;border-radius:11px;background:#3a2229;border:1px solid #e56d7866}
+
+ .danger-panel{margin:12px 0;padding:14px;border-radius:var(--radius-sm);background:#33202a;border:1px solid #e56d7854}
  .danger-panel strong{color:#ffb2b7}.danger-panel .row{margin-top:9px}
- .restic-card{padding:12px;border:1px solid #ffffff14;border-radius:11px;background:#101a26;margin-top:9px}
- .restic-card .row{margin-top:9px}
- .restic-card input{min-width:250px}
- .archive-row{background:#211d28}.archive-row td{border-bottom-color:#ffffff0d}
+ .restic-card{padding:13px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-2);margin-top:9px}
+ .restic-card .row{margin-top:9px}.restic-card input{min-width:250px}
+ .archive-row{background:#241d2b}.archive-row:hover td{background:#241d2b}
  .archive-actions{display:flex;gap:6px;flex-wrap:wrap}
- .empty{padding:14px 6px;color:#9fb0c3}
- @media (max-width:760px){main{padding:16px}.summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.settings-grid{grid-template-columns:1fr}.page-header{display:block}.header-actions{margin-top:10px}}
-</style></head><body><main>
-<header class="page-header">
-  <div><h1>Garage S3 admin</h1><div class="muted">Authenticated administration · changes are logged</div></div>
-  <div class="header-actions"><a href="/docs" style="color:#8dc8ff">API docs</a><a href="/logout" style="color:#8dc8ff">Sign out</a></div>
-</header>
+ .empty{padding:14px 6px;color:var(--muted)}
+
+ @media (max-width:900px){
+   main,.topbar-inner{padding-left:14px;padding-right:14px}
+   .summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+   .settings-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+ }
+@media (max-width:600px){
+  .summary-grid,.settings-grid{grid-template-columns:1fr}
+  .topbar-inner{flex-direction:column;align-items:flex-start;gap:6px}
+  .table-scroll{max-width:100%}
+}
+</style></head><body>
+<div class="topbar"><div class="topbar-inner">
+  <div class="brand">
+    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 8.5 12 4l8 4.5v7L12 20l-8-4.5v-7Z" stroke="#4a90e2" stroke-width="1.7" stroke-linejoin="round"/><path d="M4 8.5 12 13l8-4.5M12 13v7" stroke="#4a90e2" stroke-width="1.7" stroke-linejoin="round"/></svg>
+    <div><h1>Garage S3 admin</h1><div class="subtitle">changes are logged · private network</div></div>
+  </div>
+  <div class="top-actions">
+    <span id="refreshedAt" class="refreshed" aria-live="polite"></span>
+    <a class="plainlink" href="/docs">API docs</a>
+    <a class="plainlink" href="/logout">Sign out</a>
+  </div>
+</div></div>
+<main>
 <div id="endpoint" class="muted"></div>
-<div id="notice" class="notice"></div>
+<div id="notice" class="notice" role="status"></div>
 
 <div id="summary" class="summary-grid"></div>
 
 <section>
-  <h2 style="margin-top:0">Cluster</h2>
+  <h2>Cluster</h2>
   <div id="cluster" class="muted">Loading…</div>
 </section>
 
 <section>
-  <h2 style="margin-top:0">Connection settings</h2>
-  <p class="muted">Common S3-compatible settings for clients. Secrets stay hidden; re-enter the panel password in Access keys when you need them.</p>
-  <div id="connectionSettings" class="settings-grid"></div>
-</section>
-
-<section id="cloudflaredSection" hidden>
-  <div class="section-head"><div><h2>Cloudflared tunnel</h2><p class="muted">Optional tunnel status. Updating restarts the Garage tunnel briefly.</p></div><button id="updateCloudflared" class="secondary">Update Cloudflared</button></div>
-  <div id="cloudflaredStatus" class="muted">Loading…</div>
-</section>
-
-<section>
-  <div class="section-head"><div><h2>Active buckets</h2><p class="muted">Click a bucket name to browse its files. You can give buckets friendly display names; hover one to see the real Garage name. Archive removes a bucket from this list immediately; its data stays in Garage for 60 days before purge. New buckets grant configured panel/browser keys automatically.</p></div><button id="showArchive" class="danger">Archive bucket</button></div>
+  <div class="section-head"><div><h2>Active buckets</h2><p class="muted">Click a bucket name to browse its files. Hover a friendly name to see the real Garage name. Archive hides a bucket immediately; its data stays in Garage for the grace period before purge.</p></div><button id="showArchive" class="danger">Archive bucket…</button></div>
   <div id="archivePanel" class="danger-panel" hidden>
     <strong>Archive a bucket</strong>
-    <div id="archiveHint" class="muted">Type the exact bucket name manually. Nothing is deleted until the 60-day grace period ends.</div>
-    <div class="row"><input id="archiveName" placeholder="type exact bucket name" autocomplete="off"><button id="confirmArchive" class="danger">Archive for 60 days</button><button id="cancelArchive" class="secondary">Cancel</button></div>
+    <div id="archiveHint" class="muted">Type the exact bucket name manually. Nothing is deleted until the grace period ends.</div>
+    <div class="row"><input id="archiveName" placeholder="type exact bucket name" autocomplete="off" spellcheck="false"><button id="confirmArchive" class="danger">Archive</button><button id="cancelArchive" class="secondary">Cancel</button></div>
   </div>
-  <div class="table-scroll"><table id="buckets"><thead><tr><th>Name</th><th>Objects</th><th>Size</th><th>Usage graph</th><th>Latest file</th><th>Newest backup</th><th>Oldest backup</th><th>Public path</th><th>Keys</th><th>Action</th></tr></thead><tbody></tbody></table></div>
+  <div class="table-scroll"><table id="buckets"><thead><tr><th>Name</th><th>Objects</th><th>Size</th><th>Usage</th><th>Latest file</th><th>Newest backup</th><th>Oldest backup</th><th>Public path</th><th>Keys</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
   <div id="ageNote" class="muted"></div>
   <div class="row">
-    <input id="bucketName" placeholder="new-bucket-name" autocomplete="off">
+    <input id="bucketName" placeholder="new-bucket-name" autocomplete="off" spellcheck="false" aria-label="New bucket name">
     <button id="createBucket">Create bucket</button>
   </div>
 </section>
@@ -2586,79 +2641,60 @@ PAGE = r"""<!doctype html>
   <div class="section-head"><div><h2>Bucket browser</h2><p id="browserHint" class="muted">Select a bucket to browse its objects.</p></div><button id="closeBrowser" class="secondary">Close browser</button></div>
   <div id="browserStatus" class="status muted">Select a bucket to begin.</div>
   <div class="row">
-    <button id="browserUp" class="secondary" disabled>Up</button>
+    <button id="browserUp" class="secondary" disabled>↑ Up</button>
     <button id="browserRefresh" class="secondary">Refresh</button>
     <input id="browserUpload" type="file" aria-label="Choose a file to upload">
     <button id="browserUploadButton" disabled>Upload here</button>
   </div>
   <div id="browserPath" class="muted"></div>
-  <div class="table-scroll"><table id="browserFiles"><thead><tr><th>Name</th><th>Size</th><th>Modified</th><th>Action</th></tr></thead><tbody></tbody></table></div>
+  <div class="table-scroll"><table id="browserFiles"><thead><tr><th>Name</th><th>Size</th><th>Modified</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
   <div class="row"><button id="browserNext" class="secondary" hidden>Next page</button></div>
-</section>
-
-<section id="resticSection" hidden>
-  <h2 style="margin-top:0">Restic health checks</h2>
-  <p class="muted">Restic-style repositories are detected from their object layout. Entering a repository password stores it encrypted with the panel password; checks run only when you press the button.</p>
-  <div id="resticChecks"></div>
 </section>
 
 <section id="archivedSection" hidden>
   <div class="section-head"><div><h2>Archived buckets</h2><p class="muted">Hidden from active views. They are purged automatically when the countdown reaches zero.</p></div></div>
-  <div class="table-scroll"><table id="archivedBuckets"><thead><tr><th>Name</th><th>Archived</th><th>Deletes in</th><th>Snapshot</th><th>Status</th><th>Action</th></tr></thead><tbody></tbody></table></div>
+  <div class="table-scroll"><table id="archivedBuckets"><thead><tr><th>Name</th><th>Archived</th><th>Deletes in</th><th>Snapshot</th><th>Status</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
   <div id="restorePanel" class="danger-panel" hidden>
     <strong>Restore an archived bucket</strong>
     <div id="restoreHint" class="muted">Type the exact archived bucket name manually.</div>
-    <div class="row"><input id="restoreName" placeholder="type exact bucket name" autocomplete="off"><button id="confirmRestore">Restore bucket</button><button id="cancelRestore" class="secondary">Cancel</button></div>
+    <div class="row"><input id="restoreName" placeholder="type exact bucket name" autocomplete="off" spellcheck="false"><button id="confirmRestore">Restore bucket</button><button id="cancelRestore" class="secondary">Cancel</button></div>
   </div>
 </section>
 
 <section>
-  <h2 style="margin-top:0">Access keys</h2>
-  <div class="muted">Access keys are hidden until you re-enter the panel password. Garage only returns secrets for this deliberate reveal action.</div>
-  <table id="keys"><thead><tr><th>Name</th><th>Access key ID</th><th>Secret access key</th><th>Created</th><th>Action</th></tr></thead><tbody><tr><td colspan="5" class="muted">Keys hidden.</td></tr></tbody></table>
+  <div class="section-head"><div><h2>Access keys</h2><p class="muted">Hidden until you re-enter the panel password. Secrets are only returned for this deliberate reveal.</p></div></div>
+  <table id="keys"><thead><tr><th>Name</th><th>Access key ID</th><th>Secret access key</th><th>Created</th><th>Actions</th></tr></thead><tbody><tr><td colspan="5" class="muted">Keys hidden.</td></tr></tbody></table>
   <div class="row">
-    <input id="keyName" placeholder="new-key-name" autocomplete="off">
+    <input id="keyName" placeholder="new-key-name" autocomplete="off" spellcheck="false" aria-label="New key name">
     <button id="createKey">Create key</button>
-    <button id="revealKeys" class="secondary">View keys</button>
+    <button id="revealKeys" class="secondary">View keys…</button>
     <button id="hideKeys" class="secondary" hidden>Hide keys</button>
   </div>
   <div id="keyReveal" class="row key-reveal" hidden>
-    <input id="keyPassword" type="password" placeholder="panel password" autocomplete="current-password">
+    <input id="keyPassword" type="password" placeholder="panel password" autocomplete="current-password" aria-label="Panel password">
     <button id="confirmReveal">View keys</button>
   </div>
   <div id="keyDeletePanel" class="danger-panel" hidden>
     <strong>Delete a Garage access key</strong>
     <div id="keyDeleteHint" class="muted">Type the exact access key ID manually. This immediately revokes the key everywhere.</div>
-    <div class="row"><input id="keyDeleteId" placeholder="type exact access key ID" autocomplete="off"><button id="confirmKeyDelete" class="danger">Delete key</button><button id="cancelKeyDelete" class="secondary">Cancel</button></div>
+    <div class="row"><input id="keyDeleteId" placeholder="type exact access key ID" autocomplete="off" spellcheck="false"><button id="confirmKeyDelete" class="danger">Delete key</button><button id="cancelKeyDelete" class="secondary">Cancel</button></div>
   </div>
   <div id="secretBox"></div>
 </section>
 
 <section>
-  <h2 style="margin-top:0">API keys</h2>
-  <div class="muted">For scripts. Send <code>Authorization: Bearer &lt;token&gt;</code>. The token is shown once.</div>
+  <div class="section-head"><div><h2>API keys</h2><p class="muted">For scripts. Send <code>Authorization: Bearer &lt;token&gt;</code>. The token is shown once.</p></div></div>
   <table id="apikeys"><thead><tr><th>Name</th><th>Created</th><th>Last used</th><th>From</th><th></th></tr></thead><tbody></tbody></table>
   <div class="row">
-    <input id="apiKeyName" placeholder="script name" autocomplete="off">
+    <input id="apiKeyName" placeholder="script name" autocomplete="off" spellcheck="false" aria-label="New API key name">
     <button id="createApiKey">Create API key</button>
-    <a href="/docs" style="color:#8dc8ff;align-self:center">API docs (Swagger)</a>
+    <a class="plainlink" href="/docs">Swagger docs</a>
   </div>
   <div id="apiKeyBox"></div>
 </section>
 
 <section>
-  <h2 style="margin-top:0">Recent sign-ins</h2>
-  <table id="signins"><thead><tr><th>When</th><th>Result</th><th>User</th><th>From</th></tr></thead><tbody></tbody></table>
-</section>
-
-<section>
-  <h2 style="margin-top:0">Activity log</h2>
-  <p class="muted">Recent bucket, key, grant, Cloudflared, Restic, and API-key actions. Secrets are never written here.</p>
-  <div class="table-scroll"><table id="activity"><thead><tr><th>When</th><th>Action</th><th>Target</th><th>Result</th><th>From</th><th>Detail</th></tr></thead><tbody></tbody></table></div>
-</section>
-
-<section>
-  <h2 style="margin-top:0">Grant a key access to a bucket</h2>
+  <div class="section-head"><div><h2>Grant a key access to a bucket</h2><p class="muted">Applies permissions to an existing Garage account on an existing bucket.</p></div></div>
   <div class="row">
     <select id="grantBucket" aria-label="Bucket"><option value="">Select bucket…</option></select>
     <select id="grantKey" aria-label="Account"><option value="">Select account…</option></select>
@@ -2669,7 +2705,31 @@ PAGE = r"""<!doctype html>
   </div>
   <div id="grantStatus" class="status muted">Select a bucket, account, and permissions.</div>
 </section>
-</main>
+
+<section>
+  <div class="section-head"><div><h2>Connection settings</h2><p class="muted">Common S3-compatible settings for clients. Secrets stay hidden; re-enter the panel password in Access keys when you need them.</p></div></div>
+  <div id="connectionSettings" class="settings-grid"></div>
+</section>
+
+<section>
+  <div class="section-head"><div><h2>Recent sign-ins</h2></div></div>
+  <table id="signins"><thead><tr><th>When</th><th>Result</th><th>User</th><th>From</th></tr></thead><tbody></tbody></table>
+</section>
+
+<section>
+  <div class="section-head"><div><h2>Activity log</h2><p class="muted">Recent bucket, key, grant, Cloudflared, Restic, and API-key actions. Secrets are never written here.</p></div></div>
+  <div class="table-scroll"><table id="activity"><thead><tr><th>When</th><th>Action</th><th>Target</th><th>Result</th><th>From</th><th>Detail</th></tr></thead><tbody></tbody></table></div>
+</section>
+
+<section id="cloudflaredSection" hidden>
+  <div class="section-head"><div><h2>Cloudflared tunnel</h2><p class="muted">Optional tunnel status. Updating restarts the Garage tunnel briefly.</p></div><button id="updateCloudflared" class="secondary">Update Cloudflared</button></div>
+  <div id="cloudflaredStatus" class="muted">Loading…</div>
+</section>
+
+<section id="resticSection" hidden>
+  <div class="section-head"><div><h2>Restic health checks</h2><p class="muted">Repositories are detected from their object layout. A stored password is encrypted with the panel password; checks run only on request.</p></div></div>
+  <div id="resticChecks"></div>
+</section>
 <script>
 (() => {
  "use strict";
@@ -3061,9 +3121,11 @@ PAGE = r"""<!doctype html>
    $("hideKeys").hidden = true;
    $("revealKeys").hidden = false;
  }
- async function refresh() {
-   try {
-     const data = await api("/api/overview");
+async function refresh() {
+  try {
+    const data = await api("/api/overview");
+    const stampEl = $("refreshedAt");
+    if (stampEl) stampEl.textContent = "refreshed " + new Date().toLocaleTimeString();
      renderSummary(data);
      renderConnectionSettings(data);
      renderGrantOptions(data);
@@ -3409,7 +3471,7 @@ PAGE = r"""<!doctype html>
    });
  }
  enableCollapsibleSections();
- refresh(); setInterval(refresh, 30000);
+refresh(); setInterval(refresh, 30000);
 })();
 </script></body></html>"""
 
