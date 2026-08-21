@@ -184,6 +184,12 @@ checks the embedded dashboard JavaScript. Release artifacts are attached to
 the corresponding GitHub release. Publishing to PyPI is intentionally not
 automated.
 
+## Attribution
+
+The 2.2.0 dashboard redesign, session persistence, version checker, and OCI
+images were built by **ox-alpha**, a free model available on
+[OpenRouter](https://openrouter.ai/), under human direction.
+
 ## Security and contributing
 
 Please report vulnerabilities under the process in [SECURITY.md](SECURITY.md).

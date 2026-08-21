@@ -1,5 +1,37 @@
 # Changelog
 
+## 2.2.0 — 2026-08-21
+
+### New layout, sessions that last, and OCI images
+
+- Complete layout remake: a fixed sidebar navigation (Overview, Buckets,
+  Access keys, API keys, Nodes & versions, Activity) replaces the single
+  long page; the active view is reflected in the URL hash. Collapses to a
+  top nav bar on small screens.
+- "Remember me" on the sign-in form extends the session to 30 days
+  (`PANEL_REMEMBER_ME_DAYS`, 0 disables it).
+- The session secret is now persisted (`PANEL_SESSION_SECRET_FILE`,
+  `/var/lib/garage-panel/session-secret` by default), so signing in once
+  keeps working across panel restarts instead of silently signing out.
+- New "Garage version" card: shows the running release from the cluster
+  status and checks the newest upstream tag every six hours, with an
+  update-available indicator.
+- Official OCI images published to GHCR on every release: a ~50 MB Alpine
+  `garage-admin-panel` image for existing clusters, and a bundled
+  `-garage` variant that runs Garage itself plus the panel in one
+  container with a randomized RPC secret and a single `/data` volume.
+- `/api/overview` degrades per-section: a bucket listing failure no longer
+  blanks the whole dashboard.
+- Fixed a crash when a Garage node has no assigned layout role yet.
+
+Dashboard layout, sign-in flow, and images were tested end to end against
+a mock Garage/S3 backend in headless Chromium.
+
+### Attribution
+
+This release was produced by **ox-alpha**, a free model available on
+[OpenRouter](https://openrouter.ai/), working under human direction.
+
 ## 2.1.0 — 2026-08-21
 
 ### Interface overhaul

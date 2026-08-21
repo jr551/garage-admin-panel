@@ -78,9 +78,43 @@ LATEST_OBJECTS = max(1, int(os.environ.get("PANEL_LATEST_OBJECTS", "5")))
 # Six months is a useful default for a private admin panel. Set a persistent
 # PANEL_SESSION_SECRET as well if sessions should survive panel restarts.
 SESSION_HOURS = max(1, int(os.environ.get("PANEL_SESSION_HOURS", "4320")))
-# Regenerated per start when not configured: restarting the panel then
-# invalidates every session, which is useful after a credential change.
-SESSION_SECRET = os.environ.get("PANEL_SESSION_SECRET", "") or secrets.token_hex(32)
+# Persisted so sign-ins survive panel restarts; PANEL_SESSION_SECRET overrides.
+SESSION_SECRET_FILE = Path(
+    os.environ.get(
+        "PANEL_SESSION_SECRET_FILE", "/var/lib/garage-panel/session-secret"
+    )
+)
+
+def _load_or_create_session_secret() -> str:
+    """Persist a random session secret so sign-ins survive panel restarts.
+
+    Without this, every restart silently signs everyone out. The file is
+    created with restrictive permissions; PANEL_SESSION_SECRET overrides it
+    entirely for deployments that manage the value themselves.
+    """
+    try:
+        return SESSION_SECRET_FILE.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        pass
+    except OSError as error:
+        print(f"session secret unreadable: {error}", flush=True)
+        return secrets.token_hex(32)
+    secret = secrets.token_hex(32)
+    try:
+        SESSION_SECRET_FILE.parent.mkdir(parents=True, exist_ok=True)
+        SESSION_SECRET_FILE.write_text(secret + "\n", encoding="utf-8")
+        SESSION_SECRET_FILE.chmod(0o600)
+    except OSError as error:
+        print(f"session secret not persisted: {error}", flush=True)
+    return secret
+
+
+# Remember-me sessions outlive the default window; 0 disables the checkbox.
+REMEMBER_ME_DAYS = max(0, int(os.environ.get("PANEL_REMEMBER_ME_DAYS", "30")))
+SESSION_SECRET = (
+    os.environ.get("PANEL_SESSION_SECRET", "")
+    or _load_or_create_session_secret()
+)
 COOKIE_NAME = "garage_panel_session"
 # How buckets are reached from outside, so the panel can show a usable path per
 # bucket. This deployment intentionally uses path-style URLs only.
@@ -1011,6 +1045,59 @@ def bucket_overview(capacity_bytes: int | None = None) -> list[dict]:
     return out
 
 
+GARAGE_UPSTREAM_REPO = "deuxfleurs-org/garage"
+_version_cache: dict = {"at": 0.0, "data": None}
+_VERSION_CACHE_SECONDS = 6 * 3600
+
+
+def garage_version_status() -> dict:
+    """Compare the cluster's Garage version with the newest upstream tag.
+
+    Garage publishes tags rather than GitHub Releases, so the tag list is the
+    source of truth. Failures degrade to "unknown" — a flaky upstream check
+    must never break the dashboard.
+    """
+    global _version_cache
+    now = time.time()
+    if _version_cache["data"] is not None and now - _version_cache["at"] < _VERSION_CACHE_SECONDS:
+        return _version_cache["data"]
+    result: dict = {"current": None, "latest": None, "updateAvailable": False, "checkedAt": None, "error": None}
+    try:
+        status = garage("/v2/GetClusterStatus")
+        versions = {
+            node.get("garageVersion")
+            for node in (status.get("nodes") or [])
+            if node.get("garageVersion")
+        }
+        if versions:
+            result["current"] = sorted(versions)[-1]
+    except GarageError as error:
+        result["error"] = f"Cluster version unknown: {error.message}"
+    if result["current"]:
+        try:
+            request = urllib.request.Request(
+                f"https://api.github.com/repos/{GARAGE_UPSTREAM_REPO}/tags?per_page=100",
+                headers={"Accept": "application/vnd.github+json", "User-Agent": "garage-admin-panel"},
+            )
+            with urllib.request.urlopen(request, timeout=10) as response:
+                tags = json.loads(response.read())
+            stable = sorted(
+                (tag.get("name", "") for tag in tags),
+                key=lambda name: [int(part) for part in name.lstrip("v").split(".") if part.isdigit()],
+            )
+            stable = [name for name in stable if name.startswith("v") and "-" not in name]
+            if stable:
+                result["latest"] = stable[-1]
+                def _key(version):
+                    return [int(part) for part in version.lstrip("v").split(".")]
+                result["updateAvailable"] = _key(result["latest"]) > _key(result["current"])
+                result["checkedAt"] = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+        except (urllib.error.URLError, TimeoutError, ValueError, OSError) as error:
+            result["error"] = f"Upstream check failed: {error}"
+    _version_cache = {"at": now, "data": result}
+    return result
+
+
 def cluster_overview() -> dict:
     try:
         status = garage("/v2/GetClusterStatus")
@@ -1029,8 +1116,7 @@ def cluster_overview() -> dict:
             {
                 "hostname": node.get("hostname"),
                 "id": (node.get("id") or "")[:16],
-                "up": node.get("isUp"),
-                "capacity": human_bytes(node.get("role", {}).get("capacity")),
+                "capacity": human_bytes((node.get("role") or {}).get("capacity")),
                 "available": human_bytes(
                     (node.get("dataPartition") or {}).get("available")
                 ),
@@ -1702,9 +1788,12 @@ class Handler(BaseHTTPRequestHandler):
         print("%s - %s" % (self.address_string(), fmt % args), flush=True)
 
     # ---- auth -------------------------------------------------------------
-    def issue_session(self) -> str:
+    def issue_session(self, remember: bool = False) -> str:
         """A cookie value of expiry.signature — no password, no server state."""
-        expires = int(time.time()) + SESSION_HOURS * 3600
+        hours = SESSION_HOURS
+        if remember and REMEMBER_ME_DAYS:
+            hours = max(hours, REMEMBER_ME_DAYS * 24)
+        expires = int(time.time()) + hours * 3600
         payload = f"{PANEL_USER}:{expires}"
         signature = hmac.new(
             SESSION_SECRET.encode(), payload.encode(), hashlib.sha256
@@ -1744,7 +1833,14 @@ class Handler(BaseHTTPRequestHandler):
         )
 
     def send_login_page(self, message: str = "", status: int = 200) -> None:
-        body = LOGIN_PAGE.replace("{{message}}", message).encode()
+        body = (
+            LOGIN_PAGE
+            .replace("{{message}}", message)
+            .replace("${REMEMBER_DAYS}", f"{REMEMBER_ME_DAYS} days" if REMEMBER_ME_DAYS else "this device only")
+            .encode()
+        )
+        if not REMEMBER_ME_DAYS:
+            body = body.replace(b'name="remember"', b'name="remember" disabled')
         self.send_response(status)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -1791,6 +1887,15 @@ class Handler(BaseHTTPRequestHandler):
             return {}
 
     # ---- routes -----------------------------------------------------------
+    @staticmethod
+    def _safe(fn, *args, **kwargs):
+        """Run an overview helper; a partial Garage failure degrades that
+        section instead of blanking the whole dashboard."""
+        try:
+            return fn(*args, **kwargs)
+        except GarageError as error:
+            return {"error": error.message}
+
     def do_GET(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
@@ -1875,17 +1980,18 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply_json(
                     {
                         "cluster": cluster,
-                        "buckets": bucket_overview(cluster.get("capacityBytes")),
-                        "archivedBuckets": archived_bucket_overview(),
+                        "garageVersion": garage_version_status(),
+                        "buckets": self._safe(bucket_overview, cluster.get("capacityBytes")),
+                        "archivedBuckets": self._safe(archived_bucket_overview),
                         "archiveDays": ARCHIVE_DAYS,
-                        "connectionSettings": connection_settings(),
-                        "cloudflared": cloudflared_status(),
+                        "connectionSettings": self._safe(connection_settings),
+                        "cloudflared": self._safe(cloudflared_status),
                         "resticEnabled": RESTIC_ENABLED,
                         "backupAges": BACKUP_AGE_ENABLED,
                         "backupBuckets": BACKUP_BUCKETS,
-                        "signins": recent_signins(),
-                        "activity": recent_activity(),
-                        "accessKeys": access_key_accounts(),
+                        "signins": self._safe(recent_signins),
+                        "activity": self._safe(recent_activity),
+                        "accessKeys": self._safe(access_key_accounts),
                         "endpoint": {
                             "public": S3_PUBLIC_ENDPOINT,
                         },
@@ -1957,12 +2063,16 @@ class Handler(BaseHTTPRequestHandler):
                 # Same message either way: do not reveal which field was wrong.
                 return self.send_login_page("Incorrect username or password.", 401)
             record_signin(user, self.address_string(), "ok")
+            remember = bool((form.get("remember") or [""])[0])
+            max_age = SESSION_HOURS * 3600
+            if remember and REMEMBER_ME_DAYS:
+                max_age = max(max_age, REMEMBER_ME_DAYS * 24 * 3600)
             self.send_response(303)
             self.send_header("Location", "/")
             self.send_header(
                 "Set-Cookie",
-                f"{COOKIE_NAME}={self.issue_session()}; Path=/; HttpOnly; "
-                f"SameSite=Strict; Max-Age={SESSION_HOURS * 3600}",
+                f"{COOKIE_NAME}={self.issue_session(remember)}; Path=/; HttpOnly; "
+                f"SameSite=Strict; Max-Age={max_age}",
             )
             self.end_headers()
             return
@@ -2255,7 +2365,7 @@ def openapi_spec() -> dict:
         "openapi": "3.0.3",
         "info": {
             "title": "Garage admin panel API",
-            "version": "2.0.0",
+            "version": "2.2.0",
             "description": (
                 "Sign in with the panel form for a session cookie, or send "
                 "`Authorization: Bearer <api key>` for scripts. Create keys in "
@@ -2450,6 +2560,8 @@ LOGIN_PAGE = r"""<!doctype html>
  label{display:block;margin-top:16px;font-size:12.5px;color:#8ea0b3;font-weight:600;letter-spacing:.02em}
  input{width:100%;margin-top:6px;padding:11px 13px;border-radius:9px;border:1px solid #ffffff22;background:#0c1420;color:#e8eef5;font-size:15px;outline:none;transition:border-color .15s,box-shadow .15s}
  input:focus{border-color:#4a90e2;box-shadow:0 0 0 3px #347ed42e}
+ .remember{display:flex;align-items:center;gap:8px;margin-top:16px;font-size:13.5px;color:#b9c7d6}
+ .remember input{width:auto;margin:0;accent-color:#4a90e2}
  button{width:100%;margin-top:20px;padding:12px;border:0;border-radius:9px;background:#4a90e2;color:#fff;font-weight:700;font-size:15px;cursor:pointer;transition:background .15s}
  button:hover{background:#5da1ef}
  .err{margin-top:14px;color:#ff9c9c;font-weight:600;font-size:13.5px;min-height:1em}
@@ -2462,6 +2574,7 @@ LOGIN_PAGE = r"""<!doctype html>
   <div class="muted">Private access required.</div>
   <label>Username<input name="user" autocomplete="username" autofocus></label>
   <label>Password<input name="password" type="password" autocomplete="current-password"></label>
+  <label class="remember"><input type="checkbox" name="remember" value="1"> Remember me for ${REMEMBER_DAYS}</label>
   <button type="submit">Sign in</button>
   <div class="err">{{message}}</div>
 </form>
@@ -2472,97 +2585,111 @@ PAGE = r"""<!doctype html>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Garage admin</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none'%3E%3Cpath d='M4 8.5 12 4l8 4.5v7L12 20l-8-4.5v-7Z' stroke='%234a90e2' stroke-width='1.7' stroke-linejoin='round'/%3E%3Cpath d='M4 8.5 12 13l8-4.5M12 13v7' stroke='%234a90e2' stroke-width='1.7' stroke-linejoin='round'/%3E%3C/svg%3E">
-<meta name="theme-color" content="#0c1219">
+<meta name="theme-color" content="#0a0f16">
 <style>
  :root{
-   --bg:#0c1219; --surface:#131c29; --surface-2:#0f1722;
-   --line:#ffffff14; --line-strong:#ffffff26;
-   --text:#e8eef5; --muted:#8ea0b3;
-   --accent:#4a90e2; --accent-hover:#5da1ef;
+   --bg:#0a0f16; --rail:#0d141d; --surface:#111926; --surface-2:#0c1420;
+   --line:#ffffff12; --line-strong:#ffffff24;
+   --text:#e6edf4; --muted:#8b9db1; --faint:#5c7085;
+   --accent:#4a90e2; --accent-soft:#4a90e21f; --accent-hover:#5da1ef;
    --ok:#3fd68f; --warn:#f1a24b; --bad:#ff767e;
-   --radius:12px; --radius-sm:9px;
+   --radius:14px; --radius-sm:10px;
    color-scheme:dark;
    font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
  }
  *{box-sizing:border-box}
- body{margin:0;background:var(--bg);color:var(--text);font-size:14px;line-height:1.45}
- main{width:min(1240px,100%);margin:auto;padding:0 24px 48px}
- h1{font-size:20px;margin:0;letter-spacing:-.02em;font-weight:700}
- h2{font-size:15.5px;margin:0;font-weight:650;letter-spacing:-.01em}
- a.plainlink{color:var(--accent);text-decoration:none;font-weight:600;font-size:13.5px}
- a.plainlink:hover{text-decoration:underline}
- .muted{color:var(--muted);font-size:13px}
+ body{margin:0;background:var(--bg);color:var(--text);font-size:14px;line-height:1.45;display:flex;min-height:100vh}
 
- /* ---- top bar ---- */
- .topbar{position:sticky;top:0;z-index:10;background:#0c1219ee;backdrop-filter:blur(6px);border-bottom:1px solid var(--line)}
- .topbar-inner{width:min(1240px,100%);margin:auto;padding:10px 24px;display:flex;justify-content:space-between;align-items:center;gap:16px}
- .brand{display:flex;align-items:center;gap:10px;min-width:0}
- .brand .subtitle{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
- .top-actions{display:flex;gap:16px;align-items:center;white-space:nowrap}
- .refreshed{color:var(--muted);font-size:11.5px}
+ /* ================= sidebar rail ================= */
+ .rail{position:fixed;inset:0 auto 0 0;width:232px;background:var(--rail);border-right:1px solid var(--line);display:flex;flex-direction:column;z-index:20}
+ .brand{display:flex;align-items:center;gap:10px;padding:18px 18px 14px}
+ .brand h1{font-size:16px;margin:0;font-weight:700;letter-spacing:-.01em}
+ .brand .sub{color:var(--faint);font-size:11px;margin-top:1px}
+ nav{flex:1;padding:6px 10px;display:flex;flex-direction:column;gap:2px;overflow-y:auto}
+ .nav-label{color:var(--faint);font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;font-weight:700;padding:14px 10px 5px}
+ .nav-btn{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:var(--radius-sm);background:transparent;border:0;color:var(--muted);font:inherit;font-weight:600;font-size:13.5px;cursor:pointer;text-align:left;width:100%;transition:background .12s,color .12s}
+ .nav-btn svg{flex:0 0 17px;opacity:.85}
+ .nav-btn:hover{background:#ffffff08;color:var(--text)}
+ .nav-btn.active{background:var(--accent-soft);color:#bcd7f5}
+ .nav-btn .badge{margin-left:auto;background:var(--warn);color:#20150a;font-size:10.5px;font-weight:800;border-radius:99px;padding:1px 7px}
+ .rail-foot{padding:12px 14px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
+ .rail-foot a{color:var(--muted);font-size:12.5px;text-decoration:none;display:flex;gap:8px;align-items:center}
+ .rail-foot a:hover{color:var(--text)}
 
- /* ---- summary ---- */
- .summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:16px}
- .stat{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:13px 15px}
- .stat-label{color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;font-weight:600}
- .stat-value{font-size:22px;font-weight:700;margin-top:3px;font-variant-numeric:tabular-nums}
+ /* ================= main column ================= */
+ .content{flex:1;margin-left:232px;min-width:0;display:flex;flex-direction:column}
+ .topbar{position:sticky;top:0;z-index:15;background:#0a0f16e8;backdrop-filter:blur(8px);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:11px 26px}
+ .topbar h2{font-size:15px;margin:0;font-weight:650}
+ .topbar .spacer{flex:1}
+ .refreshed{color:var(--faint);font-size:11.5px}
+ main{width:auto;max-width:1160px;margin:auto;padding:22px 26px 60px}
 
- /* ---- sections ---- */
- section{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-top:14px}
- .section-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
- .section-head h2{margin-top:0}
- .section-head p{margin:3px 0 0}
- section > h2{display:flex;align-items:center;justify-content:space-between;gap:10px}
- .section-toggle{flex:0 0 auto}
- .section-collapsible.collapsed > :not(h2):not(.section-head){display:none}
+ /* views */
+ .view{display:none}
+ .view.active{display:block}
+
+ /* ================= cards & stats ================= */
+ .summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:16px}
+ .stat{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px}
+ .stat-label{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.07em;font-weight:650}
+ .stat-value{font-size:23px;font-weight:750;margin-top:3px;font-variant-numeric:tabular-nums}
+ section{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-bottom:14px}
+ .section-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px}
+ .section-head h2,.section-head h3{margin:0;font-size:15px;font-weight:650}
+ .section-head p{margin:3px 0 0;color:var(--muted);font-size:13px}
  .settings-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
  .setting{padding:11px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-2);min-width:0}
- .setting-label{color:var(--muted);font-size:11.5px;margin-bottom:4px;font-weight:600}
+ .setting-label{color:var(--muted);font-size:11px;margin-bottom:4px;font-weight:600}
  .setting code{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
 
- /* ---- status ---- */
+ /* version card */
+ .version-card{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+ .version-chip{display:inline-flex;align-items:center;gap:7px;background:var(--surface-2);border:1px solid var(--line-strong);border-radius:99px;padding:6px 14px;font-weight:700;font-size:13.5px;font-variant-numeric:tabular-nums}
+ .version-chip .dot{width:8px;height:8px;border-radius:50%;background:var(--ok)}
+ .version-chip.update .dot{background:var(--warn)}
+ .version-note{color:var(--muted);font-size:12.5px}
+ .version-arrow{color:var(--faint);font-size:16px}
+
+ /* status */
  .status{display:inline-flex;align-items:center;gap:6px;font-weight:600}
  .status::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--muted)}
  .status.ok::before{background:var(--ok)}.status.bad::before{background:var(--bad)}
 
- /* ---- tables ---- */
+ /* tables */
  .table-scroll{overflow-x:auto;margin:0 -4px;padding:0 4px}
  #buckets{min-width:1500px}#archivedBuckets{min-width:760px}#browserFiles{min-width:760px}
  table{width:100%;border-collapse:collapse;font-size:13.5px}
  th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:top}
- th{color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;position:sticky;top:0;background:var(--surface)}
+ th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.06em;position:sticky;top:0;background:var(--surface)}
  tbody tr:hover td{background:#ffffff06}
  #buckets th:last-child,#buckets td:last-child{position:sticky;right:0;background:var(--surface);box-shadow:-8px 0 10px -6px #00000080}
  code{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:#79b8ec;word-break:break-all}
 
- /* ---- controls ---- */
+ /* controls */
  input,select{padding:9px 11px;border-radius:var(--radius-sm);border:1px solid var(--line-strong);background:var(--surface-2);color:var(--text);outline:none;transition:border-color .15s,box-shadow .15s}
  input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px #347ed42e}
  button{padding:9px 15px;border:0;border-radius:var(--radius-sm);background:var(--accent);color:#fff;font-weight:600;font-size:13.5px;cursor:pointer;transition:background .15s;font-family:inherit}
  button:hover{background:var(--accent-hover)}
- button.secondary{background:#33445a}
- button.secondary:hover{background:#40536d}
- button.danger{background:#b04a51}
- button.danger:hover{background:#c25a61}
+ button.secondary{background:#33445a}button.secondary:hover{background:#40536d}
+ button.danger{background:#b04a51}button.danger:hover{background:#c25a61}
  button.small{padding:4px 9px;font-size:11.5px;white-space:nowrap}
  button:disabled{opacity:.55;cursor:not-allowed}
  button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
  .row{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-top:12px}
 
- /* ---- feedback ---- */
- .notice{margin:12px 0 0;font-weight:600;color:var(--accent);min-height:20px;font-size:13.5px}
+ /* feedback */
+ .notice{margin:0 0 14px;font-weight:600;color:var(--accent);min-height:20px;font-size:13.5px}
  .notice.err{color:var(--bad)}
  .secret{margin-top:10px;padding:13px;border-radius:var(--radius-sm);background:#0f2c1e;border:1px solid #35d07f59;display:grid;gap:4px}
  .err{color:var(--bad)}
  .tag{display:inline-block;white-space:nowrap;font-size:11px;padding:2px 8px;border-radius:99px;background:#2c3d52;color:#b9cbe0;margin:0 4px 4px 0}
 
- /* ---- bucket widgets ---- */
+ /* bucket widgets */
  .usage-widget{display:flex;align-items:center;gap:9px;min-width:180px}
  .usage-donut{width:46px;height:46px;flex:0 0 46px;border-radius:50%;display:grid;place-items:center;background:conic-gradient(var(--ok) var(--usage),#28374a 0);position:relative;box-shadow:0 0 0 1px var(--line)}
  .usage-donut::after{content:"";position:absolute;inset:6px;border-radius:50%;background:var(--surface)}
  .usage-donut strong{position:relative;z-index:1;font-size:9.5px;color:var(--text);font-variant-numeric:tabular-nums}
- .usage-copy{min-width:0}
- .usage-copy strong{display:block;font-size:13px}
+ .usage-copy{min-width:0}.usage-copy strong{display:block;font-size:13px}
  .usage-bar{height:4px;width:112px;margin-top:5px;border-radius:99px;background:var(--surface-2);overflow:hidden;border:1px solid var(--line)}
  .usage-bar span{display:block;height:100%;min-width:2px;border-radius:99px;background:linear-gradient(90deg,var(--ok),#79b8ec)}
  .usage-unknown .usage-donut{background:#28374a}
@@ -2580,7 +2707,6 @@ PAGE = r"""<!doctype html>
  .key-reveal{margin-top:10px}
  #grantStatus{margin-top:10px;min-height:20px}
  .activity-detail{max-width:360px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-
  .danger-panel{margin:12px 0;padding:14px;border-radius:var(--radius-sm);background:#33202a;border:1px solid #e56d7854}
  .danger-panel strong{color:#ffb2b7}.danger-panel .row{margin-top:9px}
  .restic-card{padding:13px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-2);margin-top:9px}
@@ -2590,146 +2716,210 @@ PAGE = r"""<!doctype html>
  .empty{padding:14px 6px;color:var(--muted)}
 
  @media (max-width:900px){
-   main,.topbar-inner{padding-left:14px;padding-right:14px}
+   .rail{position:static;width:auto;max-width:100vw;flex-direction:row;flex-wrap:wrap;align-items:center;border-right:0;border-bottom:1px solid var(--line)}
+   .brand{padding:12px 14px}
+   nav{flex-direction:row;flex-wrap:wrap;overflow-x:auto;max-width:100%;padding:8px 10px}
+   .nav-label,.rail-foot{display:none}
+   .nav-btn{width:auto;white-space:nowrap}
+   .content{margin-left:0;flex:1 1 auto}
+   .topbar,main{padding-left:14px;padding-right:14px;width:auto;max-width:100%}
    .summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
    .settings-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
  }
-@media (max-width:600px){
-  .summary-grid,.settings-grid{grid-template-columns:1fr}
-  .topbar-inner{flex-direction:column;align-items:flex-start;gap:6px}
-  .table-scroll{max-width:100%}
-}
+ @media (max-width:600px){
+   .summary-grid,.settings-grid{grid-template-columns:1fr}
+ }
 </style></head><body>
-<div class="topbar"><div class="topbar-inner">
+
+<aside class="rail">
   <div class="brand">
-    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 8.5 12 4l8 4.5v7L12 20l-8-4.5v-7Z" stroke="#4a90e2" stroke-width="1.7" stroke-linejoin="round"/><path d="M4 8.5 12 13l8-4.5M12 13v7" stroke="#4a90e2" stroke-width="1.7" stroke-linejoin="round"/></svg>
-    <div><h1>Garage S3 admin</h1><div class="subtitle">changes are logged · private network</div></div>
+    <svg width="30" height="30" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 8.5 12 4l8 4.5v7L12 20l-8-4.5v-7Z" stroke="#4a90e2" stroke-width="1.7" stroke-linejoin="round"/><path d="M4 8.5 12 13l8-4.5M12 13v7" stroke="#4a90e2" stroke-width="1.7" stroke-linejoin="round"/></svg>
+    <div><h1>Garage admin</h1><div class="sub">S3 control panel</div></div>
   </div>
-  <div class="top-actions">
-    <span id="refreshedAt" class="refreshed" aria-live="polite"></span>
-    <a class="plainlink" href="/docs">API docs</a>
-    <a class="plainlink" href="/logout">Sign out</a>
+  <nav aria-label="Sections">
+    <div class="nav-label">Storage</div>
+    <button class="nav-btn active" data-view="overview" type="button">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+      Overview</button>
+    <button class="nav-btn" data-view="buckets" type="button">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16l-1.5 12.5a2 2 0 0 1-2 1.5h-9a2 2 0 0 1-2-1.5L4 7Z"/><path d="M8 7a4 4 0 0 1 8 0"/></svg>
+      Buckets</button>
+    <button class="nav-btn" data-view="keys" type="button">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="8" cy="14" r="4"/><path d="m11 11 9-9m-4 4 3 3"/></svg>
+      Access keys</button>
+    <button class="nav-btn" data-view="apikeys" type="button">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M7 12h2m4 0h2m4 0-2-2m2 2-2 2M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z"/></svg>
+      API keys</button>
+    <div class="nav-label">Cluster</div>
+    <button class="nav-btn" data-view="cluster" type="button">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5V12m0 0-5.5 5M12 12l5.5 5"/></svg>
+      Nodes &amp; versions</button>
+    <button class="nav-btn" data-view="logs" type="button">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 5h16M4 12h10M4 19h7"/></svg>
+      Activity</button>
+    <div class="nav-label" id="archivedNavLabel" hidden>Archive</div>
+    <button class="nav-btn" data-view="archived" id="archivedNavBtn" type="button" hidden>
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4"/></svg>
+      Archived buckets<span class="badge" id="archivedBadge" hidden>0</span></button>
+  </nav>
+  <div class="rail-foot">
+    <span id="refreshedAt" class="refreshed"></span>
+    <a href="/docs">API documentation</a>
+    <a href="/logout">Sign out</a>
   </div>
-</div></div>
+</aside>
+
+<div class="content">
+<div class="topbar">
+  <h2 id="viewTitle">Overview</h2>
+  <div class="spacer"></div>
+  <span id="endpoint" class="muted"></span>
+</div>
 <main>
-<div id="endpoint" class="muted"></div>
 <div id="notice" class="notice" role="status"></div>
 
-<div id="summary" class="summary-grid"></div>
+<!-- ============ OVERVIEW ============ -->
+<div class="view active" id="view-overview">
+  <div id="summary" class="summary-grid"></div>
 
-<section>
-  <h2>Cluster</h2>
-  <div id="cluster" class="muted">Loading…</div>
-</section>
+  <section>
+    <div class="section-head"><div><h2>Garage version</h2><p class="muted">Running release compared with the newest upstream tag.</p></div></div>
+    <div id="versionCard" class="version-card muted">Loading…</div>
+  </section>
 
-<section>
-  <div class="section-head"><div><h2>Active buckets</h2><p class="muted">Click a bucket name to browse its files. Hover a friendly name to see the real Garage name. Archive hides a bucket immediately; its data stays in Garage for the grace period before purge.</p></div><button id="showArchive" class="danger">Archive bucket…</button></div>
-  <div id="archivePanel" class="danger-panel" hidden>
-    <strong>Archive a bucket</strong>
-    <div id="archiveHint" class="muted">Type the exact bucket name manually. Nothing is deleted until the grace period ends.</div>
-    <div class="row"><input id="archiveName" placeholder="type exact bucket name" autocomplete="off" spellcheck="false"><button id="confirmArchive" class="danger">Archive</button><button id="cancelArchive" class="secondary">Cancel</button></div>
-  </div>
-  <div class="table-scroll"><table id="buckets"><thead><tr><th>Name</th><th>Objects</th><th>Size</th><th>Usage</th><th>Latest file</th><th>Newest backup</th><th>Oldest backup</th><th>Public path</th><th>Keys</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
-  <div id="ageNote" class="muted"></div>
-  <div class="row">
-    <input id="bucketName" placeholder="new-bucket-name" autocomplete="off" spellcheck="false" aria-label="New bucket name">
-    <button id="createBucket">Create bucket</button>
-  </div>
-</section>
+  <section>
+    <div class="section-head"><div><h2>Connection settings</h2><p class="muted">Common S3-compatible settings for clients. Secrets stay hidden.</p></div></div>
+    <div id="connectionSettings" class="settings-grid"></div>
+  </section>
 
-<section id="browserSection" hidden>
-  <div class="section-head"><div><h2>Bucket browser</h2><p id="browserHint" class="muted">Select a bucket to browse its objects.</p></div><button id="closeBrowser" class="secondary">Close browser</button></div>
-  <div id="browserStatus" class="status muted">Select a bucket to begin.</div>
-  <div class="row">
-    <button id="browserUp" class="secondary" disabled>↑ Up</button>
-    <button id="browserRefresh" class="secondary">Refresh</button>
-    <input id="browserUpload" type="file" aria-label="Choose a file to upload">
-    <button id="browserUploadButton" disabled>Upload here</button>
-  </div>
-  <div id="browserPath" class="muted"></div>
-  <div class="table-scroll"><table id="browserFiles"><thead><tr><th>Name</th><th>Size</th><th>Modified</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
-  <div class="row"><button id="browserNext" class="secondary" hidden>Next page</button></div>
-</section>
+  <section id="cloudflaredSection" hidden>
+    <div class="section-head"><div><h2>Cloudflared tunnel</h2><p class="muted">Optional tunnel status. Updating restarts the Garage tunnel briefly.</p></div><button id="updateCloudflared" class="secondary">Update Cloudflared</button></div>
+    <div id="cloudflaredStatus" class="muted">Loading…</div>
+  </section>
 
-<section id="archivedSection" hidden>
-  <div class="section-head"><div><h2>Archived buckets</h2><p class="muted">Hidden from active views. They are purged automatically when the countdown reaches zero.</p></div></div>
-  <div class="table-scroll"><table id="archivedBuckets"><thead><tr><th>Name</th><th>Archived</th><th>Deletes in</th><th>Snapshot</th><th>Status</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
-  <div id="restorePanel" class="danger-panel" hidden>
-    <strong>Restore an archived bucket</strong>
-    <div id="restoreHint" class="muted">Type the exact archived bucket name manually.</div>
-    <div class="row"><input id="restoreName" placeholder="type exact bucket name" autocomplete="off" spellcheck="false"><button id="confirmRestore">Restore bucket</button><button id="cancelRestore" class="secondary">Cancel</button></div>
-  </div>
-</section>
+  <section id="resticSection" hidden>
+    <div class="section-head"><div><h2>Restic health checks</h2><p class="muted">Repositories are detected from their object layout. Checks run only on request.</p></div></div>
+    <div id="resticChecks"></div>
+  </section>
+</div>
 
-<section>
-  <div class="section-head"><div><h2>Access keys</h2><p class="muted">Hidden until you re-enter the panel password. Secrets are only returned for this deliberate reveal.</p></div></div>
-  <table id="keys"><thead><tr><th>Name</th><th>Access key ID</th><th>Secret access key</th><th>Created</th><th>Actions</th></tr></thead><tbody><tr><td colspan="5" class="muted">Keys hidden.</td></tr></tbody></table>
-  <div class="row">
-    <input id="keyName" placeholder="new-key-name" autocomplete="off" spellcheck="false" aria-label="New key name">
-    <button id="createKey">Create key</button>
-    <button id="revealKeys" class="secondary">View keys…</button>
-    <button id="hideKeys" class="secondary" hidden>Hide keys</button>
-  </div>
-  <div id="keyReveal" class="row key-reveal" hidden>
-    <input id="keyPassword" type="password" placeholder="panel password" autocomplete="current-password" aria-label="Panel password">
-    <button id="confirmReveal">View keys</button>
-  </div>
-  <div id="keyDeletePanel" class="danger-panel" hidden>
-    <strong>Delete a Garage access key</strong>
-    <div id="keyDeleteHint" class="muted">Type the exact access key ID manually. This immediately revokes the key everywhere.</div>
-    <div class="row"><input id="keyDeleteId" placeholder="type exact access key ID" autocomplete="off" spellcheck="false"><button id="confirmKeyDelete" class="danger">Delete key</button><button id="cancelKeyDelete" class="secondary">Cancel</button></div>
-  </div>
-  <div id="secretBox"></div>
-</section>
+<!-- ============ BUCKETS ============ -->
+<div class="view" id="view-buckets">
+  <section>
+    <div class="section-head"><div><h2>Active buckets</h2><p class="muted">Click a bucket name to browse its files. Hover a friendly name to see the real Garage name. Archive hides a bucket immediately; its data stays for the grace period before purge.</p></div><button id="showArchive" class="danger">Archive bucket…</button></div>
+    <div id="archivePanel" class="danger-panel" hidden>
+      <strong>Archive a bucket</strong>
+      <div id="archiveHint" class="muted">Type the exact bucket name manually. Nothing is deleted until the grace period ends.</div>
+      <div class="row"><input id="archiveName" placeholder="type exact bucket name" autocomplete="off" spellcheck="false"><button id="confirmArchive" class="danger">Archive</button><button id="cancelArchive" class="secondary">Cancel</button></div>
+    </div>
+    <div class="table-scroll"><table id="buckets"><thead><tr><th>Name</th><th>Objects</th><th>Size</th><th>Usage</th><th>Latest file</th><th>Newest backup</th><th>Oldest backup</th><th>Public path</th><th>Keys</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+    <div id="ageNote" class="muted"></div>
+    <div class="row">
+      <input id="bucketName" placeholder="new-bucket-name" autocomplete="off" spellcheck="false" aria-label="New bucket name">
+      <button id="createBucket">Create bucket</button>
+    </div>
+  </section>
 
-<section>
-  <div class="section-head"><div><h2>API keys</h2><p class="muted">For scripts. Send <code>Authorization: Bearer &lt;token&gt;</code>. The token is shown once.</p></div></div>
-  <table id="apikeys"><thead><tr><th>Name</th><th>Created</th><th>Last used</th><th>From</th><th></th></tr></thead><tbody></tbody></table>
-  <div class="row">
-    <input id="apiKeyName" placeholder="script name" autocomplete="off" spellcheck="false" aria-label="New API key name">
-    <button id="createApiKey">Create API key</button>
-    <a class="plainlink" href="/docs">Swagger docs</a>
-  </div>
-  <div id="apiKeyBox"></div>
-</section>
+  <section id="browserSection" hidden>
+    <div class="section-head"><div><h2>Bucket browser</h2><p id="browserHint" class="muted">Select a bucket to browse its objects.</p></div><button id="closeBrowser" class="secondary">Close browser</button></div>
+    <div id="browserStatus" class="status muted">Select a bucket to begin.</div>
+    <div class="row">
+      <button id="browserUp" class="secondary" disabled>↑ Up</button>
+      <button id="browserRefresh" class="secondary">Refresh</button>
+      <input id="browserUpload" type="file" aria-label="Choose a file to upload">
+      <button id="browserUploadButton" disabled>Upload here</button>
+    </div>
+    <div id="browserPath" class="muted"></div>
+    <div class="table-scroll"><table id="browserFiles"><thead><tr><th>Name</th><th>Size</th><th>Modified</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+    <div class="row"><button id="browserNext" class="secondary" hidden>Next page</button></div>
+  </section>
+</div>
 
-<section>
-  <div class="section-head"><div><h2>Grant a key access to a bucket</h2><p class="muted">Applies permissions to an existing Garage account on an existing bucket.</p></div></div>
-  <div class="row">
-    <select id="grantBucket" aria-label="Bucket"><option value="">Select bucket…</option></select>
-    <select id="grantKey" aria-label="Account"><option value="">Select account…</option></select>
-    <label class="muted"><input type="checkbox" id="permRead" checked> read</label>
-    <label class="muted"><input type="checkbox" id="permWrite" checked> write</label>
-    <label class="muted"><input type="checkbox" id="permOwner"> owner</label>
-    <button id="grant" class="secondary" disabled>Apply access</button>
-  </div>
-  <div id="grantStatus" class="status muted">Select a bucket, account, and permissions.</div>
-</section>
+<!-- ============ ARCHIVED ============ -->
+<div class="view" id="view-archived">
+  <section id="archivedSection">
+    <div class="section-head"><div><h2>Archived buckets</h2><p class="muted">Hidden from active views. They are purged automatically when the countdown reaches zero.</p></div></div>
+    <div class="table-scroll"><table id="archivedBuckets"><thead><tr><th>Name</th><th>Archived</th><th>Deletes in</th><th>Snapshot</th><th>Status</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+    <div id="restorePanel" class="danger-panel" hidden>
+      <strong>Restore an archived bucket</strong>
+      <div id="restoreHint" class="muted">Type the exact archived bucket name manually.</div>
+      <div class="row"><input id="restoreName" placeholder="type exact bucket name" autocomplete="off" spellcheck="false"><button id="confirmRestore">Restore bucket</button><button id="cancelRestore" class="secondary">Cancel</button></div>
+    </div>
+  </section>
+</div>
 
-<section>
-  <div class="section-head"><div><h2>Connection settings</h2><p class="muted">Common S3-compatible settings for clients. Secrets stay hidden; re-enter the panel password in Access keys when you need them.</p></div></div>
-  <div id="connectionSettings" class="settings-grid"></div>
-</section>
+<!-- ============ KEYS ============ -->
+<div class="view" id="view-keys">
+  <section>
+    <div class="section-head"><div><h2>Access keys</h2><p class="muted">Hidden until you re-enter the panel password. Secrets are only returned for this deliberate reveal.</p></div></div>
+    <table id="keys"><thead><tr><th>Name</th><th>Access key ID</th><th>Secret access key</th><th>Created</th><th>Actions</th></tr></thead><tbody><tr><td colspan="5" class="muted">Keys hidden.</td></tr></tbody></table>
+    <div class="row">
+      <input id="keyName" placeholder="new-key-name" autocomplete="off" spellcheck="false" aria-label="New key name">
+      <button id="createKey">Create key</button>
+      <button id="revealKeys" class="secondary">View keys…</button>
+      <button id="hideKeys" class="secondary" hidden>Hide keys</button>
+    </div>
+    <div id="keyReveal" class="row key-reveal" hidden>
+      <input id="keyPassword" type="password" placeholder="panel password" autocomplete="current-password" aria-label="Panel password">
+      <button id="confirmReveal">View keys</button>
+    </div>
+    <div id="keyDeletePanel" class="danger-panel" hidden>
+      <strong>Delete a Garage access key</strong>
+      <div id="keyDeleteHint" class="muted">Type the exact access key ID manually. This immediately revokes the key everywhere.</div>
+      <div class="row"><input id="keyDeleteId" placeholder="type exact access key ID" autocomplete="off" spellcheck="false"><button id="confirmKeyDelete" class="danger">Delete key</button><button id="cancelKeyDelete" class="secondary">Cancel</button></div>
+    </div>
+    <div id="secretBox"></div>
+  </section>
 
-<section>
-  <div class="section-head"><div><h2>Recent sign-ins</h2></div></div>
-  <table id="signins"><thead><tr><th>When</th><th>Result</th><th>User</th><th>From</th></tr></thead><tbody></tbody></table>
-</section>
+  <section>
+    <div class="section-head"><div><h2>Grant a key access to a bucket</h2><p class="muted">Applies permissions to an existing Garage account on an existing bucket.</p></div></div>
+    <div class="row">
+      <select id="grantBucket" aria-label="Bucket"><option value="">Select bucket…</option></select>
+      <select id="grantKey" aria-label="Account"><option value="">Select account…</option></select>
+      <label class="muted"><input type="checkbox" id="permRead" checked> read</label>
+      <label class="muted"><input type="checkbox" id="permWrite" checked> write</label>
+      <label class="muted"><input type="checkbox" id="permOwner"> owner</label>
+      <button id="grant" class="secondary" disabled>Apply access</button>
+    </div>
+    <div id="grantStatus" class="status muted">Select a bucket, account, and permissions.</div>
+  </section>
+</div>
 
-<section>
-  <div class="section-head"><div><h2>Activity log</h2><p class="muted">Recent bucket, key, grant, Cloudflared, Restic, and API-key actions. Secrets are never written here.</p></div></div>
-  <div class="table-scroll"><table id="activity"><thead><tr><th>When</th><th>Action</th><th>Target</th><th>Result</th><th>From</th><th>Detail</th></tr></thead><tbody></tbody></table></div>
-</section>
+<!-- ============ API KEYS ============ -->
+<div class="view" id="view-apikeys">
+  <section>
+    <div class="section-head"><div><h2>API keys</h2><p class="muted">For scripts. Send <code>Authorization: Bearer &lt;token&gt;</code>. The token is shown once.</p></div></div>
+    <table id="apikeys"><thead><tr><th>Name</th><th>Created</th><th>Last used</th><th>From</th><th></th></tr></thead><tbody></tbody></table>
+    <div class="row">
+      <input id="apiKeyName" placeholder="script name" autocomplete="off" spellcheck="false" aria-label="New API key name">
+      <button id="createApiKey">Create API key</button>
+      <a class="plainlink" href="/docs" style="color:var(--accent);text-decoration:none;font-weight:600;align-self:center">Swagger docs</a>
+    </div>
+    <div id="apiKeyBox"></div>
+  </section>
+</div>
 
-<section id="cloudflaredSection" hidden>
-  <div class="section-head"><div><h2>Cloudflared tunnel</h2><p class="muted">Optional tunnel status. Updating restarts the Garage tunnel briefly.</p></div><button id="updateCloudflared" class="secondary">Update Cloudflared</button></div>
-  <div id="cloudflaredStatus" class="muted">Loading…</div>
-</section>
+<!-- ============ CLUSTER ============ -->
+<div class="view" id="view-cluster">
+  <section>
+    <div class="section-head"><div><h2>Nodes</h2><p class="muted">Live cluster membership and disk headroom.</p></div></div>
+    <div id="cluster" class="muted">Loading…</div>
+  </section>
+</div>
 
-<section id="resticSection" hidden>
-  <div class="section-head"><div><h2>Restic health checks</h2><p class="muted">Repositories are detected from their object layout. A stored password is encrypted with the panel password; checks run only on request.</p></div></div>
-  <div id="resticChecks"></div>
-</section>
+<!-- ============ LOGS ============ -->
+<div class="view" id="view-logs">
+  <section>
+    <div class="section-head"><div><h2>Recent sign-ins</h2></div></div>
+    <table id="signins"><thead><tr><th>When</th><th>Result</th><th>User</th><th>From</th></tr></thead><tbody></tbody></table>
+  </section>
+  <section>
+    <div class="section-head"><div><h2>Activity log</h2><p class="muted">Recent bucket, key, grant, Cloudflared, Restic, and API-key actions. Secrets are never written here.</p></div></div>
+    <div class="table-scroll"><table id="activity"><thead><tr><th>When</th><th>Action</th><th>Target</th><th>Result</th><th>From</th><th>Detail</th></tr></thead><tbody></tbody></table></div>
+  </section>
+</div>
+</main>
+
 <script>
 (() => {
  "use strict";
@@ -3027,8 +3217,38 @@ PAGE = r"""<!doctype html>
      const card = el("div", "stat"); card.append(el("div", "stat-label", label), el("div", "stat-value", value)); summary.append(card);
    });
  }
- function openArchive(name) {
-   $("archivePanel").hidden = false;
+function renderVersion(v) {
+  const box = $("versionCard"); if (!box) return;
+  box.replaceChildren();
+  const chip = el("span", "version-chip");
+  chip.append(el("span", "dot"));
+  chip.append(el("strong", "", v.current ? "Garage " + v.current : "Version unknown"));
+  box.append(chip);
+  if (v.latest && v.current && v.updateAvailable) {
+    chip.classList.add("update");
+    box.append(el("span", "version-arrow", "→"));
+    const next = el("span", "version-chip update");
+    next.append(el("strong", "", v.latest + " available"));
+    box.append(next);
+    const link = document.createElement("a");
+    link.href = "https://garagehq.deuxfleurs.fr/blog/"; link.target = "_blank"; link.rel = "noopener";
+    link.className = "plainlink"; link.textContent = "Release notes";
+    link.style.cssText = "color:var(--accent);text-decoration:none;font-weight:600;font-size:13px";
+    box.append(link);
+  } else if (v.latest && v.current) {
+    box.append(el("span", "version-note", "Up to date with upstream."));
+  }
+  if (v.error) box.append(el("span", "err", v.error));
+  else if (v.checkedAt) box.append(el("span", "version-note", "Checked " + ago(v.checkedAt) + "."));
+}
+function renderArchivedBadge(count) {
+  const btn = $("archivedNavBtn"), badge = $("archivedBadge"), label = $("archivedNavLabel");
+  if (!btn) return;
+  btn.hidden = count === 0; label.hidden = count === 0;
+  badge.hidden = count === 0; badge.textContent = String(count);
+}
+function openArchive(name) {
+  $("archivePanel").hidden = false;
    $("archiveName").value = "";
    $("archiveHint").textContent = "Type “" + name + "” exactly to archive it for 60 days. Nothing is deleted now.";
    $("archiveName").focus();
@@ -3126,11 +3346,12 @@ async function refresh() {
     const data = await api("/api/overview");
     const stampEl = $("refreshedAt");
     if (stampEl) stampEl.textContent = "refreshed " + new Date().toLocaleTimeString();
-     renderSummary(data);
-     renderConnectionSettings(data);
-     renderGrantOptions(data);
-     renderCloudflared(data);
-     renderRestic(data);
+    renderSummary(data);
+    renderVersion(data.garageVersion || {});
+    renderConnectionSettings(data);
+    renderGrantOptions(data);
+    renderCloudflared(data);
+    renderRestic(data);
      const cluster = data.cluster || {};
      const box = $("cluster"); box.replaceChildren();
      if (cluster.error) { box.append(el("div", "err", cluster.error)); }
@@ -3244,6 +3465,7 @@ async function refresh() {
        body.append(row);
      });
      renderArchived(data.archivedBuckets || []);
+     renderArchivedBadge((data.archivedBuckets || []).length);
      const note = $("ageNote");
      if (!data.backupAges) note.textContent = "Backup ages are off — set S3_ACCESS_KEY and S3_SECRET_KEY in garage-panel.env to enable them.";
      else if ((data.backupBuckets || []).length) note.textContent = "Backup ages shown for: " + data.backupBuckets.join(", ");
@@ -3453,24 +3675,18 @@ async function refresh() {
      notice(error.message, true);
    } finally { button.disabled = !$("grantBucket").value || !$("grantKey").value; }
  });
- function enableCollapsibleSections() {
-   document.querySelectorAll("main > section").forEach(section => {
-     const header = section.querySelector(":scope > .section-head") || section.querySelector(":scope > h2");
-     if (!header) return;
-     section.classList.add("section-collapsible");
-     const toggle = el("button", "secondary small section-toggle", "Collapse");
-     toggle.type = "button";
-     toggle.addEventListener("click", event => {
-       event.preventDefault(); event.stopPropagation();
-       const collapsed = section.classList.toggle("collapsed");
-       toggle.textContent = collapsed ? "Expand" : "Collapse";
-       toggle.setAttribute("aria-expanded", String(!collapsed));
-     });
-     toggle.setAttribute("aria-expanded", "true");
-     header.append(toggle);
-   });
- }
- enableCollapsibleSections();
+const VIEW_TITLES = {overview: "Overview", buckets: "Buckets", archived: "Archived buckets", keys: "Access keys", apikeys: "API keys", cluster: "Nodes & versions", logs: "Activity"};
+function showView(name) {
+  document.querySelectorAll(".view").forEach(view => view.classList.toggle("active", view.id === "view-" + name));
+  document.querySelectorAll(".nav-btn").forEach(btn => btn.classList.toggle("active", btn.dataset.view === name));
+  const title = $("viewTitle");
+  if (title) title.textContent = VIEW_TITLES[name] || "Garage admin";
+  if (location.hash !== "#" + name) history.replaceState(null, "", "#" + name);
+}
+document.querySelectorAll(".nav-btn[data-view]").forEach(btn => {
+  btn.addEventListener("click", () => showView(btn.dataset.view));
+});
+showView((location.hash || "#overview").slice(1));
 refresh(); setInterval(refresh, 30000);
 })();
 </script></body></html>"""

@@ -1,0 +1,40 @@
+# syntax=docker/dockerfile:1
+# All-in-one image: Garage S3 server + admin panel in a single Alpine container.
+# GARAGE_VERSION defaults to the latest stable at build time; override with --build-arg.
+ARG GARAGE_VERSION=v2.3.0
+ARG PANEL_VERSION=2.2.0
+
+FROM python:3.12-alpine AS panel
+WORKDIR /app
+COPY garage_panel.py .
+COPY static/ static/
+
+FROM alpine:3.20
+ARG GARAGE_VERSION
+LABEL org.opencontainers.image.title="garage-admin-panel-bundled" \
+      org.opencontainers.image.description="Garage S3 server and admin panel in one Alpine image" \
+      org.opencontainers.image.source="https://github.com/jr551/garage-admin-panel" \
+      org.opencontainers.image.licenses="MIT"
+RUN apk add --no-cache python3 curl ca-certificates
+# Garage static binary (musl build) from upstream releases
+ADD https://garagehq.deuxfleurs.fr/_releases/${GARAGE_VERSION}/x86_64-unknown-linux-musl/garage /usr/local/bin/garage
+RUN chmod +x /usr/local/bin/garage && garage --version
+COPY --from=panel /app /app
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh && mkdir -p /data/garage-meta /data/garage-data && chmod 0770 /data
+ENV PANEL_HOST=0.0.0.0 \
+    PANEL_PORT=8088 \
+    GARAGE_ADMIN_URL=http://127.0.0.1:3903 \
+    S3_ENDPOINT=http://127.0.0.1:3900 \
+    PANEL_ACTIVITY_LOG=/data/activity.log \
+    PANEL_API_KEYS=/data/apikeys.json \
+    PANEL_KEY_SECRETS=/data/key-secrets.json \
+    PANEL_ARCHIVED_BUCKETS=/data/archived-buckets.json \
+    PANEL_BUCKET_NAMES=/data/bucket-names.json \
+    PANEL_RESTIC_PASSWORDS=/data/restic-passwords.json \
+    PANEL_RESTIC_CHECKS=/data/restic-checks.json \
+    PANEL_SESSION_SECRET_FILE=/data/session-secret
+VOLUME /data
+EXPOSE 3900 3903 8088
+HEALTHCHECK --interval=30s --timeout=4s CMD curl -fsS http://127.0.0.1:8088/login >/dev/null || exit 1
+ENTRYPOINT ["/entrypoint.sh"]
