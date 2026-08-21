@@ -1,5 +1,33 @@
 # Changelog
 
+## 2.3.0 — 2026-08-21
+
+### Bucket cards, browser dialog, presigned links, traffic
+
+- The Active buckets table is gone. Buckets now render as a responsive
+  card grid: name and ID, object count and size, a usage bar, latest file,
+  condensed backup ages, public link with copy button, key grants as tags,
+  and Browse / Rename / Archive actions on every card.
+- The bucket browser moved into a modal dialog with its own toolbar, so it
+  opens over the page instead of pushing content down.
+- New **Share link** button in the browser: creates a SigV4-presigned GET
+  URL for one object with a chosen expiry (1–168 hours) and copies it to
+  the clipboard. The URL works without signing in; it is signed for the
+  published public endpoint when `S3_PUBLIC_ENDPOINT` is set.
+- New data in/out card on the Overview: bytes read from and written to
+  Garage's data disks since node start (from the admin metrics endpoint).
+- Mobile: bucket cards reflow to a single column with no horizontal
+  scrolling.
+
+Presigned URLs were verified against a live Garage cluster (HTTP 200 on a
+real object through Cloudflare Tunnel); cards, dialog, archive/restore,
+and mobile layout were tested end to end in headless Chromium.
+
+### Attribution
+
+Built by **ox-alpha**, a free model available on
+[OpenRouter](https://openrouter.ai/), under human direction.
+
 ## 2.2.1 — 2026-08-21
 
 ### Fixed: Access keys always visible, API keys table clearer

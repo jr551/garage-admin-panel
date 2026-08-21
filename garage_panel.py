@@ -15,11 +15,12 @@ from __future__ import annotations
 
 import base64
 import datetime
+import json
 import secrets
 import time
 import hashlib
 import hmac
-import json
+import re
 import os
 from pathlib import Path
 import subprocess
@@ -338,6 +339,78 @@ def _s3_request(
         raise GarageError(error.code, detail)
     except (urllib.error.URLError, TimeoutError) as error:
         raise GarageError(502, f"S3 endpoint unreachable: {error}")
+
+
+def presigned_get_url(bucket: str, object_key: str, expires_seconds: int) -> dict:
+    """Presigned GET URL (SigV4 query auth) valid for expires_seconds.
+
+    Uses the read-capable reporting key. The URL is returned once and is not
+    stored anywhere; expiry is capped at seven days to match S3 limits.
+    """
+    expires_seconds = max(60, min(int(expires_seconds), 7 * 24 * 3600))
+    access_key, secret_key = browser_read_credentials()
+    # The signature must cover the host the CLIENT will connect to: the
+    # public endpoint when one is published, otherwise the internal one.
+    public_base = S3_PUBLIC_ENDPOINT or S3_ENDPOINT
+    host = urllib.parse.urlparse(public_base).netloc
+    now = datetime.datetime.now(datetime.timezone.utc)
+    amz_date = now.strftime("%Y%m%dT%H%M%SZ")
+    date_stamp = now.strftime("%Y%m%d")
+    canonical_uri = "/" + urllib.parse.quote(bucket, safe="") + "/" + urllib.parse.quote(object_key, safe="/~")
+    scope = f"{date_stamp}/{S3_REGION}/s3/aws4_request"
+    query = {
+        "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
+        "X-Amz-Credential": f"{access_key}/{scope}",
+        "X-Amz-Date": amz_date,
+        "X-Amz-Expires": str(expires_seconds),
+        "X-Amz-SignedHeaders": "host",
+    }
+    canonical_query = urllib.parse.urlencode(sorted(query.items()))
+    canonical_request = "\n".join(
+        ["GET", canonical_uri, canonical_query,
+         f"host:{host}\n", "host", "UNSIGNED-PAYLOAD"]
+    )
+    string_to_sign = "\n".join(
+        ["AWS4-HMAC-SHA256", amz_date, scope,
+         hashlib.sha256(canonical_request.encode()).hexdigest()]
+    )
+    key = _sign(("AWS4" + secret_key).encode(), date_stamp)
+    key = _sign(key, S3_REGION)
+    key = _sign(key, "s3")
+    signing_key = _sign(key, "aws4_request")
+    signature = hmac.new(signing_key, string_to_sign.encode(), hashlib.sha256).hexdigest()
+    url = f"{public_base}{canonical_uri}?{canonical_query}&X-Amz-Signature={signature}"
+    return {"url": url, "expiresInSeconds": expires_seconds}
+
+
+def cluster_traffic() -> dict:
+    """Disk-level data in/out counters from the admin metrics endpoint.
+
+    Garage counts bytes read from and written to its data disks since the
+    node started; that is the closest thing to traffic the admin API
+    exposes. A missing metrics endpoint degrades gracefully.
+    """
+    try:
+        request = urllib.request.Request(
+            f"{GARAGE_ADMIN}/metrics",
+            headers={"Authorization": f"Bearer {GARAGE_TOKEN}"},
+        )
+        with urllib.request.urlopen(request, timeout=10) as response:
+            text = response.read().decode("utf-8", "replace")
+    except (urllib.error.URLError, TimeoutError, OSError):
+        return {"available": False}
+    values = {}
+    for name in ("block_bytes_read", "block_bytes_written"):
+        match = re.search(rf"^{name}[ \t]+([0-9]+)", text, re.MULTILINE)
+        if match:
+            values[name] = int(match.group(1))
+    if not values:
+        return {"available": False}
+    return {
+        "available": True,
+        "bytesRead": values.get("block_bytes_read"),
+        "bytesWritten": values.get("block_bytes_written"),
+    }
 
 
 def _bucket_objects_error(error: GarageError) -> str:
@@ -1937,6 +2010,24 @@ class Handler(BaseHTTPRequestHandler):
             except GarageError as error:
                 self.reply_json({"error": _bucket_objects_error(error)}, error.status)
             return
+        if path == "/api/bucket/presign":
+            values = urllib.parse.parse_qs(parsed.query)
+            bucket = (values.get("bucket") or [""])[0]
+            key = (values.get("key") or [""])[0]
+            try:
+                bucket = require_active_bucket(bucket)
+                key = _checked_object_key(key)
+                expires = int((values.get("expires") or ["3600"])[0])
+                result = presigned_get_url(bucket, key, expires)
+            except GarageError as error:
+                return self.reply_json({"error": _bucket_objects_error(error)}, error.status)
+            record_activity(
+                "object.presign",
+                f"{bucket} / {key}",
+                detail=f"valid {result['expiresInSeconds']}s",
+                address=self.address_string(),
+            )
+            return self.reply_json(result)
         if path == "/api/bucket/download":
             values = urllib.parse.parse_qs(parsed.query)
             bucket = (values.get("bucket") or [""])[0]
@@ -1981,6 +2072,7 @@ class Handler(BaseHTTPRequestHandler):
                     {
                         "cluster": cluster,
                         "garageVersion": garage_version_status(),
+                        "traffic": cluster_traffic(),
                         "buckets": self._safe(bucket_overview, cluster.get("capacityBytes")),
                         "archivedBuckets": self._safe(archived_bucket_overview),
                         "archiveDays": ARCHIVE_DAYS,
@@ -2372,7 +2464,7 @@ def openapi_spec() -> dict:
         "openapi": "3.0.3",
         "info": {
             "title": "Garage admin panel API",
-            "version": "2.2.1",
+            "version": "2.3.0",
             "description": (
                 "Sign in with the panel form for a session cookie, or send "
                 "`Authorization: Bearer <api key>` for scripts. Create keys in "
@@ -2401,6 +2493,12 @@ def openapi_spec() -> dict:
             "/api/bucket/objects": {
                 "get": {
                     "summary": "List one folder level in an active bucket",
+                    "responses": ok,
+                }
+            },
+            "/api/bucket/presign": {
+                "get": {
+                    "summary": "Create a presigned GET URL for one object (query: bucket, key, expires seconds)",
                     "responses": ok,
                 }
             },
@@ -2641,7 +2739,7 @@ PAGE = r"""<!doctype html>
  .stat-label{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.07em;font-weight:650}
  .stat-value{font-size:23px;font-weight:750;margin-top:3px;font-variant-numeric:tabular-nums}
  section{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-bottom:14px}
- .section-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px}
+ .section-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px;flex-wrap:wrap}
  .section-head h2,.section-head h3{margin:0;font-size:15px;font-weight:650}
  .section-head p{margin:3px 0 0;color:var(--muted);font-size:13px}
  .settings-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
@@ -2663,8 +2761,22 @@ PAGE = r"""<!doctype html>
  .status.ok::before{background:var(--ok)}.status.bad::before{background:var(--bad)}
 
  /* tables */
- .table-scroll{overflow-x:auto;margin:0 -4px;padding:0 4px}
- #buckets{min-width:1500px}#archivedBuckets{min-width:760px}#browserFiles{min-width:760px}
+ #archivedBuckets{min-width:760px}#browserFiles{min-width:640px}
+
+ /* ---- bucket cards ---- */
+ .bucket-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(340px,100%),1fr));gap:12px}
+ .bucket-card{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius);padding:14px 15px;display:flex;flex-direction:column;gap:9px;transition:border-color .15s}
+ .bucket-card:hover{border-color:var(--line-strong)}
+ .bucket-grid-empty{grid-column:1/-1;padding:8px 4px}
+ .bucket-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap}
+ .bucket-card > *{min-width:0;max-width:100%}
+ .bucket-stats{display:flex;gap:18px;font-size:13px;font-variant-numeric:tabular-nums}
+ .bucket-stats b{display:block;font-size:15px}
+ .bucket-stats span{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+ .bucket-line{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px;min-width:0;max-width:100%}
+ .bucket-line > *{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
+ .bucket-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto;padding-top:4px}
+ .usage-bar.wide{width:100%;margin-top:0;height:5px}
  table{width:100%;border-collapse:collapse;font-size:13.5px}
  th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:top}
  th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.06em;position:sticky;top:0;background:var(--surface)}
@@ -2673,7 +2785,7 @@ PAGE = r"""<!doctype html>
  code{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:#79b8ec;word-break:break-all}
 
  /* controls */
- input,select{padding:9px 11px;border-radius:var(--radius-sm);border:1px solid var(--line-strong);background:var(--surface-2);color:var(--text);outline:none;transition:border-color .15s,box-shadow .15s}
+ input,select{padding:9px 11px;border-radius:var(--radius-sm);border:1px solid var(--line-strong);background:var(--surface-2);color:var(--text);outline:none;transition:border-color .15s,box-shadow .15s;max-width:100%}
  input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px #347ed42e}
  button{padding:9px 15px;border:0;border-radius:var(--radius-sm);background:var(--accent);color:#fff;font-weight:600;font-size:13.5px;cursor:pointer;transition:background .15s;font-family:inherit}
  button:hover{background:var(--accent-hover)}
@@ -2722,6 +2834,13 @@ PAGE = r"""<!doctype html>
  .archive-actions{display:flex;gap:6px;flex-wrap:wrap}
  .empty{padding:14px 6px;color:var(--muted)}
 
+ /* ---- bucket browser dialog ---- */
+ .bucket-dialog{width:min(880px,94vw);max-height:88vh;border:1px solid var(--line-strong);border-radius:var(--radius);background:var(--surface);color:var(--text);padding:18px;box-shadow:0 24px 70px #000000a8}
+ .bucket-dialog::backdrop{background:#050a11b8;backdrop-filter:blur(3px)}
+ .dialog-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+ .dialog-toolbar input[type=file]{max-width:min(230px,100%);flex:1 1 120px}
+ .dialog-table{max-height:52vh;overflow-y:auto}
+
  @media (max-width:900px){
    .rail{position:static;width:auto;max-width:100vw;flex-direction:row;flex-wrap:wrap;align-items:center;border-right:0;border-bottom:1px solid var(--line)}
    .brand{padding:12px 14px}
@@ -2733,9 +2852,12 @@ PAGE = r"""<!doctype html>
    .summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
    .settings-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
  }
- @media (max-width:600px){
-   .summary-grid,.settings-grid{grid-template-columns:1fr}
- }
+@media (max-width:600px){
+  .summary-grid,.settings-grid{grid-template-columns:1fr}
+  #endpoint{display:none}
+  .bucket-grid{grid-template-columns:1fr}
+  .bucket-card{min-width:0}
+}
 </style></head><body>
 
 <aside class="rail">
@@ -2792,7 +2914,12 @@ PAGE = r"""<!doctype html>
   <section>
     <div class="section-head"><div><h2>Garage version</h2><p class="muted">Running release compared with the newest upstream tag.</p></div></div>
     <div id="versionCard" class="version-card muted">Loading…</div>
-  </section>
+    <div id="trafficCard" class="bucket-stats" style="margin-top:12px" hidden>
+      <div><b id="trafficRead">—</b><span>Data read from disk</span></div>
+      <div><b id="trafficWritten">—</b><span>Data written to disk</span></div>
+      <div class="muted" style="align-self:center;font-size:11.5px">since the node started · source: Garage metrics</div>
+    </div>
+   </section>
 
   <section>
     <div class="section-head"><div><h2>Connection settings</h2><p class="muted">Common S3-compatible settings for clients. Secrets stay hidden.</p></div></div>
@@ -2819,7 +2946,7 @@ PAGE = r"""<!doctype html>
       <div id="archiveHint" class="muted">Type the exact bucket name manually. Nothing is deleted until the grace period ends.</div>
       <div class="row"><input id="archiveName" placeholder="type exact bucket name" autocomplete="off" spellcheck="false"><button id="confirmArchive" class="danger">Archive</button><button id="cancelArchive" class="secondary">Cancel</button></div>
     </div>
-    <div class="table-scroll"><table id="buckets"><thead><tr><th>Name</th><th>Objects</th><th>Size</th><th>Usage</th><th>Latest file</th><th>Newest backup</th><th>Oldest backup</th><th>Public path</th><th>Keys</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+    <div id="bucketGrid" class="bucket-grid"><div class="muted bucket-grid-empty">Loading buckets…</div></div>
     <div id="ageNote" class="muted"></div>
     <div class="row">
       <input id="bucketName" placeholder="new-bucket-name" autocomplete="off" spellcheck="false" aria-label="New bucket name">
@@ -2827,19 +2954,19 @@ PAGE = r"""<!doctype html>
     </div>
   </section>
 
-  <section id="browserSection" hidden>
-    <div class="section-head"><div><h2>Bucket browser</h2><p id="browserHint" class="muted">Select a bucket to browse its objects.</p></div><button id="closeBrowser" class="secondary">Close browser</button></div>
-    <div id="browserStatus" class="status muted">Select a bucket to begin.</div>
-    <div class="row">
-      <button id="browserUp" class="secondary" disabled>↑ Up</button>
-      <button id="browserRefresh" class="secondary">Refresh</button>
+<dialog id="browserSection" class="bucket-dialog">
+    <div class="section-head"><div><h2 id="browserTitle">Bucket browser</h2><p id="browserHint" class="muted">Select a bucket to browse its objects.</p></div><button id="closeBrowser" class="secondary small">Close ✕</button></div>
+    <div class="dialog-toolbar">
+      <button id="browserUp" class="secondary small" disabled>↑ Up</button>
+      <button id="browserRefresh" class="secondary small">Refresh</button>
+      <span id="browserStatus" class="status muted" style="margin-left:auto">Select a bucket to begin.</span>
       <input id="browserUpload" type="file" aria-label="Choose a file to upload">
       <button id="browserUploadButton" disabled>Upload here</button>
     </div>
     <div id="browserPath" class="muted"></div>
-    <div class="table-scroll"><table id="browserFiles"><thead><tr><th>Name</th><th>Size</th><th>Modified</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
+    <div class="table-scroll dialog-table"><table id="browserFiles"><thead><tr><th>Name</th><th>Size</th><th>Modified</th><th>Actions</th></tr></thead><tbody></tbody></table></div>
     <div class="row"><button id="browserNext" class="secondary" hidden>Next page</button></div>
-  </section>
+  </dialog>
 </div>
 
 <!-- ============ ARCHIVED ============ -->
@@ -3111,6 +3238,23 @@ PAGE = r"""<!doctype html>
      download.className = "secondary small"; download.textContent = "Download"; download.href = browserObjectUrl(file.key);
      download.setAttribute("download", file.key.split("/").pop());
      actions.append(download);
+     const share = el("button", "secondary small", "Share link");
+     share.title = "Create a presigned URL that works without signing in";
+     share.addEventListener("click", async () => {
+       const hours = prompt("Presigned link valid for how many hours? (1–168)", "24");
+       if (!hours) return;
+       const seconds = Math.round(parseFloat(hours) * 3600);
+       if (!Number.isFinite(seconds) || seconds < 60) return notice("Enter a duration of at least 1 hour.", true);
+       share.disabled = true;
+       try {
+         const params = new URLSearchParams({bucket: browserBucket, key: file.key, expires: String(seconds)});
+         const data = await api("/api/bucket/presign?" + params.toString());
+         await copyText(data.url);
+         notice(`Presigned link copied — valid for ${Math.round(data.expiresInSeconds / 360) / 10} h.`);
+       } catch (error) { notice(error.message, true); }
+       finally { share.disabled = false; }
+     });
+     actions.append(share);
      if (canWrite) {
        const rename = el("button", "secondary small", "Rename");
        rename.addEventListener("click", async () => {
@@ -3150,13 +3294,17 @@ PAGE = r"""<!doctype html>
  }
  function openBrowser(name) {
    browserBucket = name; browserPrefix = ""; browserNextToken = ""; browserFile = null;
-   $("browserSection").hidden = false; $("browserUpload").value = ""; $("browserUploadButton").disabled = true;
-   $("browserSection").scrollIntoView({behavior: "smooth", block: "start"});
+   $("browserTitle").textContent = "Browsing “" + name + "”";
+   $("browserUpload").value = ""; $("browserUploadButton").disabled = true;
+   const dialog = $("browserSection");
+   if (typeof dialog.showModal === "function" && !dialog.open) dialog.showModal();
    loadBrowser();
  }
  function closeBrowser() {
    browserBucket = ""; browserPrefix = ""; browserNextToken = ""; browserFile = null; browserCanWrite = false;
-   $("browserSection").hidden = true; $("browserUpload").value = "";
+   const dialog = $("browserSection");
+   if (dialog.open) dialog.close(); else dialog.hidden = true;
+   $("browserUpload").value = "";
  }
  function bytesToBase64(buffer) {
    const values = new Uint8Array(buffer); let binary = "";
@@ -3247,6 +3395,14 @@ function renderVersion(v) {
   }
   if (v.error) box.append(el("span", "err", v.error));
   else if (v.checkedAt) box.append(el("span", "version-note", "Checked " + ago(v.checkedAt) + "."));
+}
+function renderTraffic(t) {
+  const box = $("trafficCard"); if (!box) return;
+  if (!t || !t.available) { box.hidden = true; return; }
+  box.hidden = false;
+  const read = $("trafficRead"), written = $("trafficWritten");
+  if (read) read.textContent = bytes(t.bytesRead);
+  if (written) written.textContent = bytes(t.bytesWritten);
 }
 function renderArchivedBadge(count) {
   const btn = $("archivedNavBtn"), badge = $("archivedBadge"), label = $("archivedNavLabel");
@@ -3365,6 +3521,7 @@ async function refresh() {
     if (stampEl) stampEl.textContent = "refreshed " + new Date().toLocaleTimeString();
     renderSummary(data);
     renderVersion(data.garageVersion || {});
+    renderTraffic(data.traffic);
     renderConnectionSettings(data);
     renderGrantOptions(data);
     renderCloudflared(data);
@@ -3381,106 +3538,123 @@ async function refresh() {
        });
        box.append(el("div", "muted", "layout version " + text(cluster.layoutVersion)));
      }
-     const body = document.querySelector("#buckets tbody"); body.replaceChildren();
+     const grid = $("bucketGrid"); grid.replaceChildren();
      (data.buckets || []).forEach(bucket => {
-       const row = document.createElement("tr");
-       const nameCell = el("td");
        const bucketAlias = bucket.aliases[0] || "";
        const displayName = bucket.friendlyName || bucketAlias || "(no alias)";
+       const card = el("div", "bucket-card");
+
+       // head: name + archive action
+       const head = el("div", "bucket-head");
+       const titleBox = el("div");
        if (bucketAlias) {
          const open = el("button", "bucket-open", displayName);
          open.type = "button";
-         open.title = "Real Garage name: " + bucketAlias + " · Open bucket browser";
+         open.title = "Real Garage name: " + bucketAlias + " · click to browse files";
          open.addEventListener("click", () => openBrowser(bucketAlias));
-         nameCell.append(open);
+         titleBox.append(open);
        } else {
          const missing = el("span", "bucket-open", displayName);
          missing.title = "Garage bucket ID: " + bucket.id;
-         nameCell.append(missing);
+         titleBox.append(missing);
        }
-       const nameAction = el("div", "bucket-name-actions");
-       const nameButton = el("button", "secondary small", bucket.friendlyName ? "Edit name" : "Set friendly name");
-       nameButton.type = "button";
-       nameButton.addEventListener("click", () => editFriendlyBucketName(bucket));
-       nameAction.append(nameButton);
-       nameCell.append(nameAction);
-       nameCell.append(el("code", "", bucket.id.slice(0, 16) + "…"));
-       if (bucket.error) nameCell.append(el("div", "err", bucket.error));
-       row.append(nameCell);
-       row.append(el("td", "", bucket.objects === null ? "—" : bucket.objects));
-       row.append(el("td", "", bytes(bucket.bytes)));
-       const usageCell = el("td");
+       titleBox.append(el("div", "bucket-id code", bucket.id.slice(0, 20) + "…"));
+       head.append(titleBox);
+       const bucketNameForArchive = bucketAlias;
+       if (bucketNameForArchive) {
+         const archive = el("button", "danger small", "Archive…");
+         archive.addEventListener("click", () => openArchive(bucketNameForArchive));
+         head.append(archive);
+       }
+       card.append(head);
+       if (bucket.error) card.append(el("div", "err", bucket.error));
+
+       // stats row: objects + size
+       const stats = el("div", "bucket-stats");
+       const objStat = el("div"); objStat.append(el("b", "", bucket.objects === null ? "—" : Number(bucket.objects).toLocaleString())); objStat.append(el("span", "", "objects"));
+       const sizeStat = el("div"); sizeStat.append(el("b", "", bytes(bucket.bytes))); sizeStat.append(el("span", "", "size"));
+       stats.append(objStat, sizeStat);
+       card.append(stats);
+
+       // usage bar
        if (bucket.usagePercent !== null && bucket.usagePercent !== undefined) {
          const value = Math.min(100, Math.max(0, Number(bucket.usagePercent)));
-         const widget = el("div", "usage-widget");
-         const donut = el("div", "usage-donut");
-         donut.style.setProperty("--usage", value + "%");
-         donut.title = percent(bucket.usagePercent) + " of configured Garage capacity";
-         donut.append(el("strong", "", percent(bucket.usagePercent)));
-         const copy = el("div", "usage-copy");
-         copy.append(el("strong", "", bytes(bucket.bytes)));
-         const bar = el("div", "usage-bar");
-         const barFill = document.createElement("span");
-         barFill.style.width = value + "%";
-         bar.append(barFill); copy.append(bar);
-         copy.append(el("div", "muted", "of " + bytes((data.cluster || {}).capacityBytes)));
-         widget.append(donut, copy); usageCell.append(widget);
-       } else {
-         const widget = el("div", "usage-widget usage-unknown");
-         const donut = el("div", "usage-donut"); donut.append(el("strong", "", "—"));
-         widget.append(donut, el("span", "muted", "Usage unavailable")); usageCell.append(widget);
+         const bar = el("div", "usage-bar wide");
+         bar.title = percent(bucket.usagePercent) + " of configured Garage capacity";
+         const fill = document.createElement("span");
+         fill.style.width = value + "%";
+         bar.append(fill);
+         card.append(bar);
        }
-       row.append(usageCell);
-       const latestCell = el("td");
-       if (bucket.latestError) latestCell.append(el("span", "err", bucket.latestError.slice(0, 50)));
-       else if (bucket.latest === null) latestCell.append(el("span", "muted", "S3 listing off"));
-       else if (!(bucket.latest || []).length) latestCell.append(el("span", "muted", "none"));
+
+       // latest file line
+       const latestLine = el("div", "bucket-line");
+       if (bucket.latestError) { latestLine.append(el("span", "err", "⚠ " + bucket.latestError.slice(0, 60))); latestLine.title = bucket.latestError; }
+       else if (bucket.latest === null) latestLine.append(el("span", "", "S3 listing off"));
+       else if (!(bucket.latest || []).length) latestLine.append(el("span", "", "No objects yet"));
        else {
          const file = bucket.latest[0];
          const fresh = latestIsFresh(file.modified);
-         const fileLine = el("div", "latest-file");
          const clock = el("span", "latest-clock " + (fresh ? "fresh" : "stale"), "◷");
          clock.title = fresh ? "Updated within the last 24 hours" : "Updated more than 24 hours ago";
-         clock.setAttribute("aria-label", clock.title);
          const filename = el("code", "", shortFilename(file.key));
          filename.title = file.key;
-         fileLine.append(clock, filename, el("span", "muted latest-age", ago(file.modified)));
-         latestCell.append(fileLine);
+         latestLine.append(clock, filename, el("span", "muted", ago(file.modified)));
        }
-       row.append(latestCell);
+       card.append(latestLine);
+
+       // backup ages condensed
        const backup = bucket.backup;
-       const newestCell = el("td"), oldestCell = el("td");
-       if (!backup) { newestCell.append(el("span", "muted", "—")); oldestCell.append(el("span", "muted", "—")); }
-       else if (backup.error) { newestCell.append(el("span", "err", backup.error.slice(0, 40))); oldestCell.append(el("span", "muted", "—")); }
+       const backupLine = el("div", "bucket-line");
+       if (!backup) backupLine.append(el("span", "", "Backups: —"));
+       else if (backup.error) { backupLine.append(el("span", "err", "⚠ " + backup.error.slice(0, 55))); backupLine.title = backup.error; }
        else {
-         newestCell.append(el("div", "", ago(backup.newest)));
-         newestCell.append(el("div", "muted", stamp(backup.newest)));
-         oldestCell.append(el("div", "", ago(backup.oldest)));
-         oldestCell.append(el("div", "muted", stamp(backup.oldest) + (backup.truncated ? " (scan capped)" : "")));
+         const b = el("span", "", "Backup newest " + ago(backup.newest) + " · oldest " + ago(backup.oldest) + (backup.truncated ? " (capped)" : ""));
+         b.title = "Newest: " + stamp(backup.newest) + "\nOldest: " + stamp(backup.oldest);
+         backupLine.append(b);
        }
-       row.append(newestCell); row.append(oldestCell);
+       card.append(backupLine);
+
+       // public link + keys tags on one compact block
        const pub = bucket.public || {};
-       const pubCell = el("td");
-       if (pub.path_style) pubCell.append(publicLink(pub.path_style));
-       if (!pub.path_style) pubCell.append(el("span", "muted", "—"));
-       row.append(pubCell);
-       const keyCell = el("td");
-       (bucket.keys || []).forEach(key => {
+       if (pub.path_style) {
+         const pubLine = el("div", "bucket-line");
+         const linkCode = el("code", "", pub.path_style.replace(/^https?:\/\//, ""));
+         linkCode.title = "Copy public path-style URL: " + pub.path_style;
+         const copyBtn = el("button", "secondary small", "Copy");
+         copyBtn.addEventListener("click", async () => {
+           try { await copyText(pub.path_style); notice("Copied public link."); }
+           catch (error) { notice(error.message, true); }
+         });
+         pubLine.append(el("span", "", "Public:"), linkCode, copyBtn);
+         card.append(pubLine);
+       }
+
+       const keysLine = el("div", "bucket-line");
+       (bucket.keys || []).slice(0, 4).forEach(key => {
          const perms = [key.owner ? "owner" : null, key.read ? "r" : null, key.write ? "w" : null].filter(Boolean).join("/");
-         keyCell.append(el("span", "tag", (key.name || key.id) + (perms ? " " + perms : "")));
+         keysLine.append(el("span", "tag", (key.name || key.id) + (perms ? " " + perms : "")));
        });
-       if (!(bucket.keys || []).length) keyCell.append(el("span", "muted", "none"));
-       row.append(keyCell);
-       const actionCell = el("td");
-       const bucketName = bucket.aliases[0];
-       if (bucketName) {
-         const archive = el("button", "danger small", "Archive");
-         archive.addEventListener("click", () => openArchive(bucketName));
-         actionCell.append(archive);
-       } else actionCell.append(el("span", "muted", "—"));
-       row.append(actionCell);
-       body.append(row);
+       if ((bucket.keys || []).length > 4) keysLine.append(el("span", "tag", "+" + (bucket.keys.length - 4)));
+       if (!(bucket.keys || []).length) keysLine.append(el("span", "", "No key grants"));
+       card.append(keysLine);
+
+       // actions
+       const actions = el("div", "bucket-actions");
+       if (bucketAlias) {
+         const browse = el("button", "secondary small", "Browse");
+         browse.addEventListener("click", () => openBrowser(bucketAlias));
+         actions.append(browse);
+       }
+       const nameButton = el("button", "secondary small", bucket.friendlyName ? "Rename" : "Set name");
+       nameButton.type = "button";
+       nameButton.addEventListener("click", () => editFriendlyBucketName(bucket));
+       actions.append(nameButton);
+       card.append(actions);
+
+       grid.append(card);
      });
+     if (!(data.buckets || []).length) grid.append(el("div", "muted bucket-grid-empty", "No active buckets. Create one above."));
      renderArchived(data.archivedBuckets || []);
      renderArchivedBadge((data.archivedBuckets || []).length);
      const note = $("ageNote");
@@ -3523,12 +3697,11 @@ async function refresh() {
      });
      if (!(apiKeys.keys || []).length) { const r = document.createElement("tr"); r.append(el("td", "muted", "No API keys yet — create one above.")); apiBody.append(r); }
      // Always show access key metadata (secrets masked until reveal).
-     await api("/api/keys").then(keysData => {
-       if (keysData.error) throw new Error(keysData.error);
-       accessKeyMetadata = keysData.keys || [];
-       renderKeys(accessKeyMetadata);
-       setKeysVisibility(keysRevealed && accessKeyMetadata.some(key => key.secretAvailable));
-     });
+     const keysData = await api("/api/keys");
+     if (keysData.error) throw new Error(keysData.error);
+     accessKeyMetadata = keysData.keys || [];
+     renderKeys(accessKeyMetadata);
+     setKeysVisibility(keysRevealed && accessKeyMetadata.some(key => key.secretAvailable));
      $("keysLoadingNote")?.remove();
    } catch (error) { notice(error.message, true); }
  }
