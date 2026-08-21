@@ -2043,10 +2043,17 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             return self.wfile.write(body)
         if path == "/api/keys":
+            # Metadata is safe to show; secrets stay masked until the
+            # deliberate password re-entry via /api/keys/reveal.
+            keys = self._safe(key_details)
+            if isinstance(keys, dict):
+                return self.reply_json(keys)
             return self.reply_json(
                 {
-                    "locked": True,
-                    "message": "Re-enter the panel password to view access keys.",
+                    "locked": False,
+                    "keys": [
+                        {**key, "secretAccessKey": None} for key in keys
+                    ],
                 }
             )
         self.reply_json({"error": "Not found"}, 404)
@@ -2365,7 +2372,7 @@ def openapi_spec() -> dict:
         "openapi": "3.0.3",
         "info": {
             "title": "Garage admin panel API",
-            "version": "2.2.0",
+            "version": "2.2.1",
             "description": (
                 "Sign in with the panel form for a session cookie, or send "
                 "`Authorization: Bearer <api key>` for scripts. Create keys in "
@@ -2851,8 +2858,8 @@ PAGE = r"""<!doctype html>
 <!-- ============ KEYS ============ -->
 <div class="view" id="view-keys">
   <section>
-    <div class="section-head"><div><h2>Access keys</h2><p class="muted">Hidden until you re-enter the panel password. Secrets are only returned for this deliberate reveal.</p></div></div>
-    <table id="keys"><thead><tr><th>Name</th><th>Access key ID</th><th>Secret access key</th><th>Created</th><th>Actions</th></tr></thead><tbody><tr><td colspan="5" class="muted">Keys hidden.</td></tr></tbody></table>
+    <div class="section-head"><div><h2>Access keys</h2><p class="muted">All Garage keys are listed here. Secrets stay masked until you press "View keys" and re-enter the panel password.</p></div></div>
+    <table id="keys"><thead><tr><th>Name</th><th>Access key ID</th><th>Secret access key</th><th>Created</th><th>Actions</th></tr></thead><tbody><tr><td colspan="5" class="muted">Loading keys…</td></tr></tbody></table>
     <div class="row">
       <input id="keyName" placeholder="new-key-name" autocomplete="off" spellcheck="false" aria-label="New key name">
       <button id="createKey">Create key</button>
@@ -3298,18 +3305,29 @@ function openArchive(name) {
      actions.append(restore); row.append(actions); body.append(row);
    });
  }
+ let accessKeyMetadata = [];   // always fetched: name/id/created, no secrets
  let keysRevealed = false;
+ function secretCellFor(key) {
+   const cell = el("td");
+   if (keysRevealed && key.secretAvailable && key.secretAccessKey) {
+     cell.append(el("code", "", key.secretAccessKey));
+   } else if (!key.secretAvailable) {
+     cell.append(el("span", "muted", "Unavailable — rotate this key"));
+   } else {
+     cell.append(el("code", "", "•".repeat(20)));
+     cell.title = 'Press "View keys" and re-enter the panel password to show.';
+   }
+   return cell;
+ }
  function renderKeys(entries) {
    const body = document.querySelector("#keys tbody"); body.replaceChildren();
    (entries || []).forEach(key => {
      const row = document.createElement("tr");
      row.append(el("td", "", key.name || "(unnamed)"));
      row.append(el("td", "", key.id));
-     const secretCell = el("td");
-     if (key.secretAvailable) secretCell.append(el("code", "", key.secretAccessKey));
-     else secretCell.append(el("span", "muted", "Unavailable — rotate this key"));
-     row.append(secretCell);
-     row.append(el("td", "muted", key.created + (key.expired ? " (expired)" : "")));
+     row.append(secretCellFor(key));
+     const created = el("td", "muted", key.created + (key.expired ? " (expired)" : ""));
+     row.append(created);
      const actions = el("td");
      const remove = el("button", "danger small", "Delete");
      remove.addEventListener("click", () => {
@@ -3324,23 +3342,22 @@ function openArchive(name) {
    });
    if (!(entries || []).length) {
      const row = document.createElement("tr");
-     const cell = el("td", "muted", "No access keys found."); cell.colSpan = 5; row.append(cell);
+     const cell = el("td", "muted", "No Garage keys found."); cell.colSpan = 5; row.append(cell);
      body.append(row);
    }
-   keysRevealed = true;
-   $("hideKeys").hidden = false;
-   $("revealKeys").hidden = true;
  }
- function hideKeys() {
-   const body = document.querySelector("#keys tbody"); body.replaceChildren();
-   const row = document.createElement("tr");
-   const cell = el("td", "muted", "Keys hidden."); cell.colSpan = 5; row.append(cell); body.append(row);
-   keysRevealed = false;
-   keyDeleteTarget = "";
-   $("keyDeletePanel").hidden = true;
-   $("hideKeys").hidden = true;
-   $("revealKeys").hidden = false;
+ function hideSecrets() {
+   if (!accessKeyMetadata.length) return;
+   renderKeys(accessKeyMetadata);
  }
+ function setKeysVisibility(revealed) {
+   keysRevealed = revealed;
+   hideSecrets();
+   $("hideKeys").hidden = !revealed || !accessKeyMetadata.some(key => key.secretAvailable);
+   $("revealKeys").hidden = revealed;
+   const revealRow = $("keyReveal");
+   if (revealed) revealRow.hidden = true;
+}
 async function refresh() {
   try {
     const data = await api("/api/overview");
@@ -3504,11 +3521,17 @@ async function refresh() {
        actions.append(revoke); row.append(actions);
        apiBody.append(row);
      });
-     if (!(apiKeys.keys || []).length) { const r = document.createElement("tr"); r.append(el("td", "muted", "No API keys yet.")); apiBody.append(r); }
-     if (!keysRevealed) hideKeys();
+     if (!(apiKeys.keys || []).length) { const r = document.createElement("tr"); r.append(el("td", "muted", "No API keys yet — create one above.")); apiBody.append(r); }
+     // Always show access key metadata (secrets masked until reveal).
+     await api("/api/keys").then(keysData => {
+       if (keysData.error) throw new Error(keysData.error);
+       accessKeyMetadata = keysData.keys || [];
+       renderKeys(accessKeyMetadata);
+       setKeysVisibility(keysRevealed && accessKeyMetadata.some(key => key.secretAvailable));
+     });
+     $("keysLoadingNote")?.remove();
    } catch (error) { notice(error.message, true); }
  }
- let keyDeleteTarget = "";
  $("showArchive").addEventListener("click", () => {
    $("archivePanel").hidden = false;
    $("archiveHint").textContent = "Type the exact bucket name manually. Nothing is deleted until the 60-day grace period ends.";
@@ -3572,12 +3595,11 @@ async function refresh() {
    $("keyReveal").hidden = false;
    $("keyPassword").focus();
  });
- $("hideKeys").addEventListener("click", () => {
-   hideKeys();
-   $("keyPassword").value = "";
-   $("keyReveal").hidden = true;
- });
- $("cancelKeyDelete").addEventListener("click", () => {
+$("hideKeys").addEventListener("click", () => {
+  setKeysVisibility(false);
+  notice("Secrets hidden again.");
+});
+$("cancelKeyDelete").addEventListener("click", () => {
    keyDeleteTarget = "";
    $("keyDeleteId").value = "";
    $("keyDeletePanel").hidden = true;
@@ -3593,7 +3615,7 @@ async function refresh() {
      await api("/api/keys/delete", {method: "POST", body: JSON.stringify({id, confirmation: id})});
      $("keyDeletePanel").hidden = true;
      keyDeleteTarget = "";
-     hideKeys();
+     setKeysVisibility(false);
      notice("Deleted access key “" + id + "”.");
      refresh();
    } catch (error) { notice(error.message, true); }
@@ -3606,8 +3628,10 @@ async function refresh() {
      const data = await api("/api/keys/reveal", {method: "POST", body: JSON.stringify({password})});
      $("keyPassword").value = "";
      $("keyReveal").hidden = true;
-     renderKeys(data.keys || []);
-     notice("Access keys revealed until you hide them or sign out.");
+     // Merge revealed secrets into the cached metadata and re-render.
+     accessKeyMetadata = data.keys || [];
+     setKeysVisibility(true);
+     notice("Secrets visible until you hide them or sign out.");
    } catch (error) { $("keyPassword").value = ""; notice(error.message, true); }
  });
  $("createApiKey").addEventListener("click", async () => {

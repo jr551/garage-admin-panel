@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.2.1 — 2026-08-21
+
+### Fixed: Access keys always visible, API keys table clearer
+
+- The Access keys table now lists every Garage key (name, access key ID,
+  created date) immediately on load instead of showing a single
+  "Keys hidden." placeholder row.
+- Secrets stay masked behind a re-entry of the panel password; "View keys"
+  reveals them, "Hide keys" masks them again. Keys without a recoverable
+  secret are labelled for rotation as before.
+- The grant-access account selector and the API keys empty state were made
+  clearer ("No API keys yet — create one above.").
+- Repaired a broken `try`/`catch` in the dashboard's refresh cycle that
+  could leave tables blank when any render step failed.
+
+Validated against a live install serving 14 Garage keys.
+
 ## 2.2.0 — 2026-08-21
 
 ### New layout, sessions that last, and OCI images
