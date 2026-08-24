@@ -1,5 +1,34 @@
 # Changelog
 
+## 2.4.0 — 2026-08-24
+
+### Massive GUI overhaul + hardening
+
+**Shell & navigation**
+- Collapsible sidebar rail (persists in localStorage), glass topbar with blur, command palette (⌘K / Ctrl+K, `?`), theme toggle (auto/light/dark persisted), refresh button, and toast stack (4 max, auto-dismiss) replacing the single-line notice.
+- Login redesigned with hero, gradient CTA, and subtle radial backdrop; CSP hardened (`frame-ancestors 'none'`, `X-Frame-Options: DENY` on both `/` and `/login`).
+
+**Overview**
+- New "Capacity & health" section: SVG donut (used % vs cluster capacity), total bytes/objects, and live node health dots; `S3_PUBLIC_ENDPOINT` copy-all button.
+- Summary stat cards with soft accent glow and trend chips; skeletons replace "Loading…" placeholders.
+
+**Buckets**
+- Toolbar: live search (matches `aliases[0]` + friendlyName + id), sort (name/size/objects/freshness), filter pills (All/Fresh/Stale/Empty), density toggle (comfortable/compact), and live `filtered / total` count.
+- Cards rebuilt: checkbox multi-select with `selected` ring, status dot, bulk Archive selected, and correct `bucket.aliases[0]` derivation (fixes blank names/actions on normal buckets). Search/sort/filter also include `aliases`.
+- Empty-state illustration when filters exclude everything.
+
+**Browser**
+- Breadcrumb crumbs (`root / prefix / …`) with click-to-navigate, View toggle, drag-drop hint area, and dialog backdrop blur.
+
+**Code & security**
+- `server_version` bumped to `GaragePanel/2.4.0`; OpenAPI `info.version` 2.4.0.
+- CSP: `img-src 'self' data:` + `frame-ancestors 'none'` + `X-Frame-Options: DENY` on panel and login; `showToast` escapes HTML.
+- Bucket renderer now correctly uses `bucket.aliases[0]` (was `bucket.alias`/`bucket.name`) for name, browse, archive, search, and sort.
+
+Verified: `py_compile` clean, local smoke against mock Garage (login, `/`, `/docs`, `/openapi.json`, CSP headers, all new UI markers present, `bucket.aliases[0]` in delivered JS).
+
+
+
 ## 2.3.0 — 2026-08-21
 
 ### Bucket cards, browser dialog, presigned links, traffic

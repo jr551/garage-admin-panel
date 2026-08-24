@@ -1855,7 +1855,7 @@ def grant_panel_browser_access(bucket_id: str) -> dict:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "GaragePanel/2.0.0"
+    server_version = "GaragePanel/2.4.0"
 
     def log_message(self, fmt: str, *args) -> None:  # keep the journal readable
         print("%s - %s" % (self.address_string(), fmt % args), flush=True)
@@ -1917,7 +1917,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'")
         self.end_headers()
         self.wfile.write(body)
 
@@ -1993,8 +1994,9 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header(
                 "Content-Security-Policy",
                 "default-src 'none'; style-src 'unsafe-inline'; "
-                "script-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'",
+                "script-src 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'",
             )
+            self.send_header("X-Frame-Options", "DENY")
             self.send_header("Referrer-Policy", "no-referrer")
             self.send_header("X-Content-Type-Options", "nosniff")
             self.end_headers()
@@ -2464,7 +2466,7 @@ def openapi_spec() -> dict:
         "openapi": "3.0.3",
         "info": {
             "title": "Garage admin panel API",
-            "version": "2.3.0",
+            "version": "2.4.0",
             "description": (
                 "Sign in with the panel form for a session cookie, or send "
                 "`Authorization: Bearer <api key>` for scripts. Create keys in "
@@ -2653,36 +2655,44 @@ DOCS_PAGE = r"""<!doctype html>
 LOGIN_PAGE = r"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Sign in · Garage admin</title>
+<title>Sign in \u00B7 Garage admin</title>
+<meta name="theme-color" content="#0a0f16">
 <style>
- :root{color-scheme:dark;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+ :root{color-scheme:dark light;--bg:#080e18;--card:#111c2b;--line:#ffffff14;--line2:#ffffff22;--text:#e6edf4;--muted:#8b9db1;--faint:#5c7085;--accent:#4a90e2;--accent2:#5da1ef;--radius:16px;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
  *{box-sizing:border-box}
- body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0b1119;color:#e8eef5}
- form{width:min(380px,92vw);background:#121a26;border:1px solid #ffffff14;border-radius:14px;padding:30px 28px 26px;box-shadow:0 18px 50px #00000066}
- .brand{display:flex;align-items:center;gap:10px;margin-bottom:2px}
- h1{font-size:19px;margin:0;letter-spacing:-.01em;font-weight:700}
- .muted{color:#8ea0b3;font-size:13px;line-height:1.5}
- label{display:block;margin-top:16px;font-size:12.5px;color:#8ea0b3;font-weight:600;letter-spacing:.02em}
- input{width:100%;margin-top:6px;padding:11px 13px;border-radius:9px;border:1px solid #ffffff22;background:#0c1420;color:#e8eef5;font-size:15px;outline:none;transition:border-color .15s,box-shadow .15s}
- input:focus{border-color:#4a90e2;box-shadow:0 0 0 3px #347ed42e}
- .remember{display:flex;align-items:center;gap:8px;margin-top:16px;font-size:13.5px;color:#b9c7d6}
- .remember input{width:auto;margin:0;accent-color:#4a90e2}
- button{width:100%;margin-top:20px;padding:12px;border:0;border-radius:9px;background:#4a90e2;color:#fff;font-weight:700;font-size:15px;cursor:pointer;transition:background .15s}
- button:hover{background:#5da1ef}
- .err{margin-top:14px;color:#ff9c9c;font-weight:600;font-size:13.5px;min-height:1em}
+ body{margin:0;min-height:100vh;display:grid;place-items:center;background:radial-gradient(1200px 600px at 50% -10%,#1a3350 0%,transparent 60%),var(--bg);color:var(--text)}
+ .wrap{width:min(420px,92vw)}
+ .hero{display:flex;align-items:center;gap:12px;justify-content:center;margin-bottom:18px}
+ .hero h1{font-size:20px;margin:0;font-weight:800;letter-spacing:-.02em}
+ .hero .sub{font-size:12px;color:var(--faint);margin-top:1px}
+ form{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:28px 26px 22px;box-shadow:0 24px 60px #00000055,0 1px 0 #ffffff08 inset}
+ .muted{color:var(--muted);font-size:13px;line-height:1.5}
+ label{display:block;margin-top:15px;font-size:12.5px;color:var(--muted);font-weight:650}
+ input{width:100%;margin-top:6px;padding:11px 13px;border-radius:10px;border:1px solid var(--line2);background:color-mix(in srgb,var(--card) 85%, #000 15%);color:var(--text);font-size:15px;outline:none}
+ input:focus{border-color:var(--accent);box-shadow:0 0 0 3px #4a90e233}
+ .remember{display:flex;align-items:center;gap:8px;margin-top:16px;font-size:13.5px;color:var(--muted)}
+ .remember input{width:auto;margin:0;accent-color:var(--accent)}
+ button{width:100%;margin-top:20px;padding:12px;border:0;border-radius:10px;background:linear-gradient(180deg,var(--accent2),var(--accent));color:#fff;font-weight:750;font-size:15px;cursor:pointer}
+ button:hover{filter:brightness(1.07)}
+ .err{margin-top:14px;color:#ff767e;font-weight:650;font-size:13.5px;min-height:1.2em}
+ .foot{margin-top:14px;text-align:center;font-size:11.5px;color:var(--faint)}
+ .foot a{color:var(--muted);text-decoration:none}.foot a:hover{color:var(--text)}
 </style></head><body>
-<form method="post" action="/login">
-  <div class="brand">
-    <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 8.5 12 4l8 4.5v7L12 20l-8-4.5v-7Z" stroke="#4a90e2" stroke-width="1.7" stroke-linejoin="round"/><path d="M4 8.5 12 13l8-4.5M12 13v7" stroke="#4a90e2" stroke-width="1.7" stroke-linejoin="round"/></svg>
-    <h1>Garage admin</h1>
+<div class="wrap">
+  <div class="hero">
+    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 8.5 12 4l8 4.5v7L12 20l-8-4.5v-7Z" stroke="#4a90e2" stroke-width="1.7" stroke-linejoin="round"/><path d="M4 8.5 12 13l8-4.5M12 13v7" stroke="#4a90e2" stroke-width="1.7" stroke-linejoin="round"/></svg>
+    <div><h1>Garage admin</h1><div class="sub">S3 control panel \u2014 private access</div></div>
   </div>
-  <div class="muted">Private access required.</div>
-  <label>Username<input name="user" autocomplete="username" autofocus></label>
-  <label>Password<input name="password" type="password" autocomplete="current-password"></label>
-  <label class="remember"><input type="checkbox" name="remember" value="1"> Remember me for ${REMEMBER_DAYS}</label>
-  <button type="submit">Sign in</button>
-  <div class="err">{{message}}</div>
-</form>
+  <form method="post" action="/login">
+    <div class="muted">Sign in to manage buckets, keys and cluster health.</div>
+    <label>Username<input name="user" autocomplete="username" autofocus spellcheck="false"></label>
+    <label>Password<input name="password" type="password" autocomplete="current-password"></label>
+    <label class="remember"><input type="checkbox" name="remember" value="1"> Remember me for ${REMEMBER_DAYS}</label>
+    <button type="submit">Sign in \u2192</button>
+    <div class="err">{{message}}</div>
+  </form>
+  <div class="foot">Protected by HMAC session \u00B7 <a href="https://github.com/jr551/garage-admin-panel" target="_blank" rel="noopener">jr551/garage-admin-panel</a></div>
+</div>
 </body></html>"""
 
 PAGE = r"""<!doctype html>
@@ -2691,274 +2701,373 @@ PAGE = r"""<!doctype html>
 <title>Garage admin</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none'%3E%3Cpath d='M4 8.5 12 4l8 4.5v7L12 20l-8-4.5v-7Z' stroke='%234a90e2' stroke-width='1.7' stroke-linejoin='round'/%3E%3Cpath d='M4 8.5 12 13l8-4.5M12 13v7' stroke='%234a90e2' stroke-width='1.7' stroke-linejoin='round'/%3E%3C/svg%3E">
 <meta name="theme-color" content="#0a0f16">
+<meta name="color-scheme" content="dark light">
 <style>
  :root{
-   --bg:#0a0f16; --rail:#0d141d; --surface:#111926; --surface-2:#0c1420;
-   --line:#ffffff12; --line-strong:#ffffff24;
-   --text:#e6edf4; --muted:#8b9db1; --faint:#5c7085;
-   --accent:#4a90e2; --accent-soft:#4a90e21f; --accent-hover:#5da1ef;
-   --ok:#3fd68f; --warn:#f1a24b; --bad:#ff767e;
-   --radius:14px; --radius-sm:10px;
-   color-scheme:dark;
-   font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+   --bg:#080e18; --bg-elev:#0a0f16; --rail:#0c131e; --surface:#111c2b; --surface-2:#0d1829; --surface-3:#13233a;
+   --line:#ffffff12; --line-strong:#ffffff1e; --line-2:#ffffff08;
+   --text:#e6edf4; --muted:#8b9db1; --faint:#5c7085; --dim:#3d5268;
+   --accent:#4a90e2; --accent-soft:#4a90e21c; --accent-hover:#5da1ef; --accent-ring:#4a90e233;
+   --ok:#3fd68f; --ok-soft:#3fd68f18; --warn:#f1a24b; --warn-soft:#f1a24b18; --bad:#ff6b77; --bad-soft:#ff6b7718;
+   --radius:14px; --radius-sm:10px; --radius-lg:18px; --shadow:0 18px 50px #00000055; --shadow-sm:0 8px 24px #00000033;
+   color-scheme:dark; font-family:system-ui,-apple-system,"Segoe UI",Inter,sans-serif;
+   --mono:ui-monospace,Menlo,Consolas,monospace;
+   --ease:cubic-bezier(.2,.8,.2,1);
  }
- *{box-sizing:border-box}
- body{margin:0;background:var(--bg);color:var(--text);font-size:14px;line-height:1.45;display:flex;min-height:100vh}
-
- /* ================= sidebar rail ================= */
- .rail{position:fixed;inset:0 auto 0 0;width:232px;background:var(--rail);border-right:1px solid var(--line);display:flex;flex-direction:column;z-index:20}
- .brand{display:flex;align-items:center;gap:10px;padding:18px 18px 14px}
- .brand h1{font-size:16px;margin:0;font-weight:700;letter-spacing:-.01em}
- .brand .sub{color:var(--faint);font-size:11px;margin-top:1px}
- nav{flex:1;padding:6px 10px;display:flex;flex-direction:column;gap:2px;overflow-y:auto}
- .nav-label{color:var(--faint);font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;font-weight:700;padding:14px 10px 5px}
- .nav-btn{display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:var(--radius-sm);background:transparent;border:0;color:var(--muted);font:inherit;font-weight:600;font-size:13.5px;cursor:pointer;text-align:left;width:100%;transition:background .12s,color .12s}
+ @media(prefers-color-scheme:light){
+   :root{--bg:#eef2f7;--bg-elev:#f6f8fb;--rail:#ffffff;--surface:#ffffff;--surface-2:#f1f5f9;--surface-3:#e8eef6;
+     --line:#0a0f1614;--line-strong:#0a0f1626;--line-2:#0a0f1608;--text:#0f1f33;--muted:#5b6d82;--faint:#8a9bb0;--dim:#b8c6d6;
+     --accent-soft:#4a90e214;--accent-ring:#4a90e222;--shadow:0 18px 50px #0a0f1620;--shadow-sm:0 8px 24px #0a0f1614;color-scheme:light}
+   body{background:var(--bg)!important}
+   .rail{box-shadow:4px 0 24px #0a0f1610}
+   .topbar{background:color-mix(in srgb,var(--bg) 88%, white 12%)!important}
+ }
+ [data-theme="light"]{--bg:#eef2f7;--bg-elev:#f6f8fb;--rail:#ffffff;--surface:#ffffff;--surface-2:#f1f5f9;--surface-3:#e8eef6;--line:#0a0f1614;--line-strong:#0a0f1626;--line-2:#0a0f1608;--text:#0f1f33;--muted:#5b6d82;--faint:#8a9bb0;--dim:#b8c6d6;--accent-soft:#4a90e214;--accent-ring:#4a90e222;--shadow:0 18px 50px #0a0f1620;--shadow-sm:0 8px 24px #0a0f1614;color-scheme:light}
+ [data-theme="dark"]{--bg:#080e18;--bg-elev:#0a0f16;--rail:#0c131e;--surface:#111c2b;--surface-2:#0d1829;--surface-3:#13233a;--line:#ffffff12;--line-strong:#ffffff1e;--text:#e6edf4;--muted:#8b9db1;--faint:#5c7085;color-scheme:dark}
+ *{box-sizing:border-box} html{scrollbar-gutter:stable}
+ body{margin:0;background:radial-gradient(900px 500px at 20% -10%,#1a3350 0%,transparent 55%),var(--bg);color:var(--text);font-size:14px;line-height:1.5;display:flex;min-height:100vh}
+ ::selection{background:var(--accent);color:#fff}
+ ::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:var(--line-strong);border-radius:99px}::-webkit-scrollbar-track{background:transparent}
+ .rail{position:fixed;inset:0 auto 0 0;width:248px;background:var(--rail);border-right:1px solid var(--line);display:flex;flex-direction:column;z-index:20;transition:width .2s var(--ease),transform .2s var(--ease)}
+ .rail.collapsed{width:64px}
+ .rail.collapsed .brand h1,.rail.collapsed .brand .sub,.rail.collapsed .nav-label,.rail.collapsed .nav-btn span.label,.rail.collapsed .rail-foot .foot-label,.rail.collapsed .nav-btn .badge{opacity:0;pointer-events:none;width:0}
+ .rail.collapsed .nav-btn{justify-content:center;padding:10px}
+ .rail.collapsed .brand{justify-content:center}
+ .brand{display:flex;align-items:center;gap:10px;padding:16px 16px 12px;min-height:56px}
+ .brand svg{flex:0 0 28px}
+ .brand h1{font-size:15px;margin:0;font-weight:800;letter-spacing:-.02em;white-space:nowrap}
+ .brand .sub{color:var(--faint);font-size:11px;margin-top:1px;white-space:nowrap}
+ .collapse-btn{margin-left:auto;background:var(--surface-2);border:1px solid var(--line);width:28px;height:28px;border-radius:8px;display:grid;place-items:center;cursor:pointer;color:var(--muted)}
+ .collapse-btn:hover{color:var(--text);border-color:var(--line-strong)}
+ nav{flex:1;padding:6px 10px;display:flex;flex-direction:column;gap:2px;overflow-y:auto;overflow-x:hidden}
+ .nav-label{color:var(--faint);font-size:10.5px;text-transform:uppercase;letter-spacing:.09em;font-weight:750;padding:14px 8px 5px;white-space:nowrap}
+ .nav-btn{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;background:transparent;border:0;color:var(--muted);font:inherit;font-weight:600;font-size:13.5px;cursor:pointer;text-align:left;width:100%;transition:background .15s,color .15s;white-space:nowrap}
  .nav-btn svg{flex:0 0 17px;opacity:.85}
- .nav-btn:hover{background:#ffffff08;color:var(--text)}
- .nav-btn.active{background:var(--accent-soft);color:#bcd7f5}
+ .nav-btn:hover{background:var(--line-2);color:var(--text)}
+ .nav-btn.active{background:var(--accent-soft);color:var(--text);box-shadow:0 0 0 1px var(--accent-ring) inset}
  .nav-btn .badge{margin-left:auto;background:var(--warn);color:#20150a;font-size:10.5px;font-weight:800;border-radius:99px;padding:1px 7px}
- .rail-foot{padding:12px 14px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
- .rail-foot a{color:var(--muted);font-size:12.5px;text-decoration:none;display:flex;gap:8px;align-items:center}
- .rail-foot a:hover{color:var(--text)}
-
- /* ================= main column ================= */
- .content{flex:1;margin-left:232px;min-width:0;display:flex;flex-direction:column}
- .topbar{position:sticky;top:0;z-index:15;background:#0a0f16e8;backdrop-filter:blur(8px);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:11px 26px}
- .topbar h2{font-size:15px;margin:0;font-weight:650}
+ .rail-foot{padding:12px 12px 14px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:6px}
+ .rail-foot a{color:var(--muted);font-size:12.5px;text-decoration:none;display:flex;gap:8px;align-items:center;padding:6px 8px;border-radius:8px}
+ .rail-foot a:hover{color:var(--text);background:var(--line-2)}
+ .content{flex:1;margin-left:248px;min-width:0;display:flex;flex-direction:column;transition:margin-left .2s var(--ease)}
+ .rail.collapsed ~ .content{margin-left:64px}
+ .topbar{position:sticky;top:0;z-index:15;background:color-mix(in srgb,var(--bg) 82%, transparent);backdrop-filter:blur(12px) saturate(1.2);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;padding:10px 24px;flex-wrap:wrap}
+ .topbar h2{font-size:15px;margin:0;font-weight:700;letter-spacing:-.01em}
  .topbar .spacer{flex:1}
- .refreshed{color:var(--faint);font-size:11.5px}
- main{width:auto;max-width:1160px;margin:auto;padding:22px 26px 60px}
-
- /* views */
- .view{display:none}
+ .topbar-actions{display:flex;align-items:center;gap:8px}
+ .icon-btn{width:36px;height:36px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--muted);display:grid;place-items:center;cursor:pointer;transition:all .15s}
+ .icon-btn:hover{color:var(--text);border-color:var(--line-strong);background:var(--surface-3)}
+ .search-trigger{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;border:1px solid var(--line);background:var(--surface);color:var(--muted);font-size:13px;cursor:pointer;min-width:180px}
+ .search-trigger:hover{border-color:var(--line-strong);color:var(--text)}
+ .search-trigger kbd{margin-left:auto;background:var(--surface-3);border:1px solid var(--line);border-bottom-width:2px;border-radius:6px;padding:1px 6px;font-size:11px;font-family:var(--mono);color:var(--faint)}
+ .refreshed{color:var(--faint);font-size:11.5px;white-space:nowrap}
+ main{width:100%;max-width:1220px;margin:0 auto;padding:20px 24px 60px}
+ .view{display:none;animation:viewIn .22s var(--ease)}
  .view.active{display:block}
-
- /* ================= cards & stats ================= */
+ @keyframes viewIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
  .summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:16px}
- .stat{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px}
- .stat-label{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.07em;font-weight:650}
- .stat-value{font-size:23px;font-weight:750;margin-top:3px;font-variant-numeric:tabular-nums}
- section{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-bottom:14px}
- .section-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px;flex-wrap:wrap}
- .section-head h2,.section-head h3{margin:0;font-size:15px;font-weight:650}
- .section-head p{margin:3px 0 0;color:var(--muted);font-size:13px}
+ .stat{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;position:relative;overflow:hidden}
+ .stat::after{content:"";position:absolute;inset:auto -20% -40% auto;width:120px;height:80px;background:radial-gradient(ellipse at center,var(--accent-soft),transparent 70%);pointer-events:none}
+ .stat-label{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.07em;font-weight:650;display:flex;align-items:center;gap:6px}
+ .stat-value{font-size:24px;font-weight:800;margin-top:2px;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+ .stat-hint{font-size:12px;color:var(--faint);margin-top:2px}
+ .stat-trend{position:absolute;top:12px;right:12px;font-size:11px;font-weight:700;padding:3px 7px;border-radius:99px;background:var(--ok-soft);color:var(--ok)}
+ .capacity-ring{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+ section{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px;margin-bottom:14px;box-shadow:var(--shadow-sm)}
+ .section-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px;flex-wrap:wrap}
+ .section-head h2,.section-head h3{margin:0;font-size:15px;font-weight:700;letter-spacing:-.01em}
+ .section-head p{margin:3px 0 0;color:var(--muted);font-size:13px;line-height:1.4}
  .settings-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
- .setting{padding:11px 12px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-2);min-width:0}
- .setting-label{color:var(--muted);font-size:11px;margin-bottom:4px;font-weight:600}
- .setting code{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
-
- /* version card */
+ .setting{padding:12px 12px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);min-width:0;transition:border-color .15s}
+ .setting:hover{border-color:var(--line-strong)}
+ .setting-label{color:var(--muted);font-size:11px;margin-bottom:4px;font-weight:650;letter-spacing:.02em}
+ .setting code{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text);font-size:12.5px}
  .version-card{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
- .version-chip{display:inline-flex;align-items:center;gap:7px;background:var(--surface-2);border:1px solid var(--line-strong);border-radius:99px;padding:6px 14px;font-weight:700;font-size:13.5px;font-variant-numeric:tabular-nums}
- .version-chip .dot{width:8px;height:8px;border-radius:50%;background:var(--ok)}
- .version-chip.update .dot{background:var(--warn)}
- .version-note{color:var(--muted);font-size:12.5px}
- .version-arrow{color:var(--faint);font-size:16px}
-
- /* status */
- .status{display:inline-flex;align-items:center;gap:6px;font-weight:600}
+ .version-chip{display:inline-flex;align-items:center;gap:7px;background:var(--surface-2);border:1px solid var(--line-strong);border-radius:99px;padding:6px 14px;font-weight:700;font-size:13px}
+ .version-chip .dot{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok)}
+ .version-chip.update .dot{background:var(--warn);box-shadow:0 0 8px var(--warn)}
+ .status{display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:12.5px}
  .status::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--muted)}
- .status.ok::before{background:var(--ok)}.status.bad::before{background:var(--bad)}
-
- /* tables */
- #archivedBuckets{min-width:760px}#browserFiles{min-width:640px}
-
- /* ---- bucket cards ---- */
- .bucket-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(340px,100%),1fr));gap:12px}
- .bucket-card{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius);padding:14px 15px;display:flex;flex-direction:column;gap:9px;transition:border-color .15s}
- .bucket-card:hover{border-color:var(--line-strong)}
- .bucket-grid-empty{grid-column:1/-1;padding:8px 4px}
- .bucket-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap}
- .bucket-card > *{min-width:0;max-width:100%}
+ .status.ok::before{background:var(--ok);box-shadow:0 0 6px var(--ok)}.status.bad::before{background:var(--bad)}
+ .bucket-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;padding:10px;background:var(--surface-2);border:1px solid var(--line);border-radius:12px}
+ .bucket-toolbar input[type="search"]{flex:1 1 220px;min-width:180px}
+ .seg{display:inline-flex;background:var(--surface);border:1px solid var(--line);border-radius:9px;overflow:hidden}
+ .seg button{padding:7px 12px;font-size:12.5px;font-weight:650;background:transparent;color:var(--muted);border:0;border-radius:0}
+ .seg button.active{background:var(--accent);color:#fff}
+ .seg button+button{border-left:1px solid var(--line)}
+ .bucket-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(360px,100%),1fr));gap:12px}
+ .bucket-grid.compact{grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr));gap:8px}
+ .bucket-grid.compact .bucket-card{padding:11px 12px}
+ .bucket-card{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius);padding:14px 15px;display:flex;flex-direction:column;gap:9px;transition:border-color .15s,transform .15s,box-shadow .15s;position:relative}
+ .bucket-card:hover{border-color:var(--line-strong);transform:translateY(-1px);box-shadow:var(--shadow-sm)}
+ .bucket-card.selected{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-ring)}
+ .bucket-head{display:flex;align-items:flex-start;gap:10px}
+ .bucket-check{flex:0 0 18px;margin-top:3px;accent-color:var(--accent)}
+ .bucket-title{flex:1;min-width:0}
+ .bucket-title .name{font-weight:750;font-size:14.5px;letter-spacing:-.01em;display:flex;align-items:center;gap:7px}
+ .bucket-title .name .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);flex:0 0 7px}
+ .bucket-title .id{font-size:11px;color:var(--faint);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
  .bucket-stats{display:flex;gap:18px;font-size:13px;font-variant-numeric:tabular-nums}
- .bucket-stats b{display:block;font-size:15px}
- .bucket-stats span{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+ .bucket-stats b{display:block;font-size:15px;font-weight:800}
+ .bucket-stats span{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:650}
  .bucket-line{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px;min-width:0;max-width:100%}
- .bucket-line > *{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}
  .bucket-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto;padding-top:4px}
  .usage-bar.wide{width:100%;margin-top:0;height:5px}
+ .usage-bar{height:4px;width:112px;margin-top:5px;border-radius:99px;background:var(--surface-3);overflow:hidden;border:1px solid var(--line)}
+ .usage-bar span{display:block;height:100%;min-width:2px;border-radius:99px;background:linear-gradient(90deg,var(--ok),#79b8ec)}
  table{width:100%;border-collapse:collapse;font-size:13.5px}
- th,td{text-align:left;padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:top}
- th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.06em;position:sticky;top:0;background:var(--surface)}
- tbody tr:hover td{background:#ffffff06}
- #buckets th:last-child,#buckets td:last-child{position:sticky;right:0;background:var(--surface);box-shadow:-8px 0 10px -6px #00000080}
- code{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:#79b8ec;word-break:break-all}
-
- /* controls */
- input,select{padding:9px 11px;border-radius:var(--radius-sm);border:1px solid var(--line-strong);background:var(--surface-2);color:var(--text);outline:none;transition:border-color .15s,box-shadow .15s;max-width:100%}
- input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px #347ed42e}
- button{padding:9px 15px;border:0;border-radius:var(--radius-sm);background:var(--accent);color:#fff;font-weight:600;font-size:13.5px;cursor:pointer;transition:background .15s;font-family:inherit}
- button:hover{background:var(--accent-hover)}
- button.secondary{background:#33445a}button.secondary:hover{background:#40536d}
- button.danger{background:#b04a51}button.danger:hover{background:#c25a61}
- button.small{padding:4px 9px;font-size:11.5px;white-space:nowrap}
- button:disabled{opacity:.55;cursor:not-allowed}
+ th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+ th{color:var(--muted);font-weight:650;font-size:11px;text-transform:uppercase;letter-spacing:.06em;position:sticky;top:0;background:var(--surface)}
+ tbody tr{transition:background .12s}tbody tr:hover td{background:var(--line-2)}
+ code{font-family:var(--mono);font-size:12px;color:#79b8ec;word-break:break-all}
+ input,select{padding:9px 11px;border-radius:10px;border:1px solid var(--line-strong);background:var(--surface-2);color:var(--text);outline:none;transition:border-color .15s,box-shadow .15s,background .15s;max-width:100%;font:inherit;font-size:13.5px}
+ input:focus,select:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-ring);background:var(--surface)}
+ button{padding:9px 15px;border:0;border-radius:10px;background:var(--accent);color:#fff;font-weight:650;font-size:13.5px;cursor:pointer;transition:background .15s,transform .08s; font-family:inherit}
+ button:hover{background:var(--accent-hover)}button:active{transform:translateY(1px)}
+ button.secondary{background:var(--surface-3);color:var(--text);border:1px solid var(--line)}button.secondary:hover{background:var(--surface-2);border-color:var(--line-strong)}
+ button.ghost{background:transparent;color:var(--muted);border:1px solid transparent}button.ghost:hover{background:var(--line-2);color:var(--text)}
+ button.danger{background:var(--bad);box-shadow:0 4px 14px #ff6b7733}button.danger:hover{filter:brightness(1.05)}
+ button.small{padding:5px 10px;font-size:12px;white-space:nowrap;border-radius:8px}
+ button:disabled{opacity:.5;cursor:not-allowed;transform:none}
  button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
- .row{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-top:12px}
-
- /* feedback */
+ .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px}
  .notice{margin:0 0 14px;font-weight:600;color:var(--accent);min-height:20px;font-size:13.5px}
  .notice.err{color:var(--bad)}
- .secret{margin-top:10px;padding:13px;border-radius:var(--radius-sm);background:#0f2c1e;border:1px solid #35d07f59;display:grid;gap:4px}
+ #toastStack{position:fixed;right:16px;bottom:16px;z-index:80;display:flex;flex-direction:column;gap:8px;max-width:min(420px,90vw)}
+ .toast{padding:12px 14px;border-radius:12px;background:var(--surface);border:1px solid var(--line-strong);box-shadow:var(--shadow);display:flex;gap:10px;align-items:flex-start;animation:toastIn .25s var(--ease);font-size:13.5px}
+ .toast.ok{border-color:color-mix(in srgb,var(--ok) 35%, var(--line-strong))}.toast.bad{border-color:color-mix(in srgb,var(--bad) 35%, var(--line-strong))}
+ .toast .toast-dot{width:8px;height:8px;border-radius:50%;margin-top:6px;flex:0 0 8px}
+ .toast.ok .toast-dot{background:var(--ok)}.toast.bad .toast-dot{background:var(--bad)}.toast.muted .toast-dot{background:var(--muted)}
+ @keyframes toastIn{from{opacity:0;transform:translateY(8px) scale(.98)}to{opacity:1;transform:none}}
+ .secret{margin-top:10px;padding:13px;border-radius:10px;background:var(--ok-soft);border:1px solid color-mix(in srgb,var(--ok) 35%, transparent);display:grid;gap:4px}
  .err{color:var(--bad)}
- .tag{display:inline-block;white-space:nowrap;font-size:11px;padding:2px 8px;border-radius:99px;background:#2c3d52;color:#b9cbe0;margin:0 4px 4px 0}
-
- /* bucket widgets */
- .usage-widget{display:flex;align-items:center;gap:9px;min-width:180px}
- .usage-donut{width:46px;height:46px;flex:0 0 46px;border-radius:50%;display:grid;place-items:center;background:conic-gradient(var(--ok) var(--usage),#28374a 0);position:relative;box-shadow:0 0 0 1px var(--line)}
+ .tag{display:inline-flex;align-items:center;gap:4px;white-space:nowrap;font-size:11px;padding:3px 8px;border-radius:99px;background:var(--surface-3);color:var(--muted);border:1px solid var(--line);font-weight:600}
+ .tag.ok{background:var(--ok-soft);color:var(--ok);border-color:color-mix(in srgb,var(--ok) 25%, transparent)}
+ .usage-widget{display:flex;align-items:center;gap:10px;min-width:180px}
+ .usage-donut{width:46px;height:46px;flex:0 0 46px;border-radius:50%;display:grid;place-items:center;background:conic-gradient(var(--ok) var(--usage),var(--surface-3) 0);position:relative;box-shadow:0 0 0 1px var(--line)}
  .usage-donut::after{content:"";position:absolute;inset:6px;border-radius:50%;background:var(--surface)}
- .usage-donut strong{position:relative;z-index:1;font-size:9.5px;color:var(--text);font-variant-numeric:tabular-nums}
- .usage-copy{min-width:0}.usage-copy strong{display:block;font-size:13px}
- .usage-bar{height:4px;width:112px;margin-top:5px;border-radius:99px;background:var(--surface-2);overflow:hidden;border:1px solid var(--line)}
- .usage-bar span{display:block;height:100%;min-width:2px;border-radius:99px;background:linear-gradient(90deg,var(--ok),#79b8ec)}
- .usage-unknown .usage-donut{background:#28374a}
- .latest-file{display:flex;align-items:center;gap:6px;max-width:250px}
- .latest-file code{display:block;max-width:150px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
- .latest-clock{font-size:17px;line-height:1;flex:0 0 auto}
- .latest-clock.fresh{color:var(--ok)}.latest-clock.stale{color:var(--warn)}
- .latest-age{white-space:nowrap}
- .public-link{display:flex;gap:6px;align-items:flex-start;margin-bottom:6px;max-width:330px}
+ .usage-donut strong{position:relative;z-index:1;font-size:9.5px;color:var(--text)}
+ .public-link{display:flex;gap:6px;align-items:flex-start;max-width:100%}
  .public-link code{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;word-break:normal}
- .bucket-open{background:transparent;color:#79b8ec;padding:0;text-align:left;font-weight:650;font-size:14px}
+ .bucket-open{background:transparent;color:var(--accent);padding:0;text-align:left;font-weight:700;font-size:14px}
  .bucket-open:hover{text-decoration:underline;background:transparent}
- .bucket-name-actions{margin-top:5px}
- .browser-key{max-width:420px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
- .key-reveal{margin-top:10px}
- #grantStatus{margin-top:10px;min-height:20px}
- .activity-detail{max-width:360px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
- .danger-panel{margin:12px 0;padding:14px;border-radius:var(--radius-sm);background:#33202a;border:1px solid #e56d7854}
- .danger-panel strong{color:#ffb2b7}.danger-panel .row{margin-top:9px}
- .restic-card{padding:13px;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--surface-2);margin-top:9px}
- .restic-card .row{margin-top:9px}.restic-card input{min-width:250px}
- .archive-row{background:#241d2b}.archive-row:hover td{background:#241d2b}
- .archive-actions{display:flex;gap:6px;flex-wrap:wrap}
- .empty{padding:14px 6px;color:var(--muted)}
-
- /* ---- bucket browser dialog ---- */
- .bucket-dialog{width:min(880px,94vw);max-height:88vh;border:1px solid var(--line-strong);border-radius:var(--radius);background:var(--surface);color:var(--text);padding:18px;box-shadow:0 24px 70px #000000a8}
- .bucket-dialog::backdrop{background:#050a11b8;backdrop-filter:blur(3px)}
- .dialog-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
- .dialog-toolbar input[type=file]{max-width:min(230px,100%);flex:1 1 120px}
- .dialog-table{max-height:52vh;overflow-y:auto}
-
- @media (max-width:900px){
+ .skeleton{background:linear-gradient(90deg,var(--surface-2) 25%,var(--surface-3) 37%,var(--surface-2) 63%);background-size:400% 100%;animation:shimmer 1.2s ease-in-out infinite;border-radius:8px}
+ @keyframes shimmer{0%{background-position:100% 0}100%{background-position:0 0}}
+ .skeleton-card{height:152px}
+ .skeleton-stat{height:86px}
+ .empty-state{padding:28px 18px;text-align:center;color:var(--muted);border:1px dashed var(--line-strong);border-radius:12px;background:var(--surface-2)}
+ .empty-state b{color:var(--text)}
+ .danger-panel{margin:12px 0;padding:14px;border-radius:10px;background:var(--bad-soft);border:1px solid color-mix(in srgb,var(--bad) 30%, transparent)}
+ .danger-panel strong{color:var(--bad)}
+ .restic-card{padding:13px;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);margin-top:9px}
+ .bucket-dialog{width:min(920px,94vw);max-height:88vh;border:1px solid var(--line-strong);border-radius:16px;background:var(--surface);color:var(--text);padding:18px;box-shadow:var(--shadow)}
+ .bucket-dialog::backdrop{background:#050a11b8;backdrop-filter:blur(6px)}
+ .dialog-toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+ .dialog-table{max-height:52vh;overflow:auto;border:1px solid var(--line);border-radius:10px}
+ .crumbs{display:flex;gap:4px;align-items:center;flex-wrap:wrap;font-size:13px}
+ .crumbs button{padding:4px 8px;font-size:12.5px}
+ .palette{width:min(560px,92vw);border:1px solid var(--line-strong);border-radius:16px;background:var(--surface);box-shadow:var(--shadow);padding:0;overflow:hidden}
+ .palette::backdrop{background:#050a11a0;backdrop-filter:blur(4px)}
+ .palette input{width:100%;border:0;border-bottom:1px solid var(--line);border-radius:0;padding:14px 16px;font-size:15px;background:var(--surface)}
+ .palette-list{max-height:46vh;overflow:auto;padding:8px}
+ .palette-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;cursor:pointer;color:var(--muted)}
+ .palette-item.active,.palette-item:hover{background:var(--surface-2);color:var(--text)}
+ .palette-item kbd{margin-left:auto;font-size:11px;background:var(--surface-3);border:1px solid var(--line);border-bottom-width:2px;padding:1px 6px;border-radius:6px;font-family:var(--mono)}
+ @media (max-width:980px){
    .rail{position:static;width:auto;max-width:100vw;flex-direction:row;flex-wrap:wrap;align-items:center;border-right:0;border-bottom:1px solid var(--line)}
    .brand{padding:12px 14px}
    nav{flex-direction:row;flex-wrap:wrap;overflow-x:auto;max-width:100%;padding:8px 10px}
    .nav-label,.rail-foot{display:none}
    .nav-btn{width:auto;white-space:nowrap}
-   .content{margin-left:0;flex:1 1 auto}
+   .content{margin-left:0!important;flex:1 1 auto}
    .topbar,main{padding-left:14px;padding-right:14px;width:auto;max-width:100%}
    .summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
    .settings-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+   .collapse-btn{display:none}
+   .search-trigger kbd{display:none}
  }
-@media (max-width:600px){
-  .summary-grid,.settings-grid{grid-template-columns:1fr}
-  #endpoint{display:none}
-  .bucket-grid{grid-template-columns:1fr}
-  .bucket-card{min-width:0}
-}
+ @media (max-width:600px){
+   .summary-grid,.settings-grid{grid-template-columns:1fr}
+   #endpoint{display:none}
+   .bucket-grid{grid-template-columns:1fr}
+ }
 </style></head><body>
-
-<aside class="rail">
+<aside class="rail" id="rail">
   <div class="brand">
-    <svg width="30" height="30" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 8.5 12 4l8 4.5v7L12 20l-8-4.5v-7Z" stroke="#4a90e2" stroke-width="1.7" stroke-linejoin="round"/><path d="M4 8.5 12 13l8-4.5M12 13v7" stroke="#4a90e2" stroke-width="1.7" stroke-linejoin="round"/></svg>
-    <div><h1>Garage admin</h1><div class="sub">S3 control panel</div></div>
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 8.5 12 4l8 4.5v7L12 20l-8-4.5v-7Z" stroke="#4a90e2" stroke-width="1.7" stroke-linejoin="round"/><path d="M4 8.5 12 13l8-4.5M12 13v7" stroke="#4a90e2" stroke-width="1.7" stroke-linejoin="round"/></svg>
+    <div style="min-width:0"><h1>Garage admin</h1><div class="sub">S3 control panel</div></div>
+    <button class="collapse-btn" id="collapseBtn" title="Collapse sidebar" aria-label="Collapse sidebar">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18L9 12L15 6"/></svg>
+    </button>
   </div>
   <nav aria-label="Sections">
     <div class="nav-label">Storage</div>
     <button class="nav-btn active" data-view="overview" type="button">
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
-      Overview</button>
+      <span class="label">Overview</span></button>
     <button class="nav-btn" data-view="buckets" type="button">
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16l-1.5 12.5a2 2 0 0 1-2 1.5h-9a2 2 0 0 1-2-1.5L4 7Z"/><path d="M8 7a4 4 0 0 1 8 0"/></svg>
-      Buckets</button>
+      <span class="label">Buckets</span></button>
     <button class="nav-btn" data-view="keys" type="button">
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="8" cy="14" r="4"/><path d="m11 11 9-9m-4 4 3 3"/></svg>
-      Access keys</button>
+      <span class="label">Access keys</span></button>
     <button class="nav-btn" data-view="apikeys" type="button">
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M7 12h2m4 0h2m4 0-2-2m2 2-2 2M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Z"/></svg>
-      API keys</button>
+      <span class="label">API keys</span></button>
     <div class="nav-label">Cluster</div>
     <button class="nav-btn" data-view="cluster" type="button">
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="5" r="2.5"/><circle cx="5" cy="19" r="2.5"/><circle cx="19" cy="19" r="2.5"/><path d="M12 7.5V12m0 0-5.5 5M12 12l5.5 5"/></svg>
-      Nodes &amp; versions</button>
+      <span class="label">Nodes &amp; versions</span></button>
     <button class="nav-btn" data-view="logs" type="button">
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 5h16M4 12h10M4 19h7"/></svg>
-      Activity</button>
+      <span class="label">Activity</span></button>
     <div class="nav-label" id="archivedNavLabel" hidden>Archive</div>
     <button class="nav-btn" data-view="archived" id="archivedNavBtn" type="button" hidden>
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4"/></svg>
-      Archived buckets<span class="badge" id="archivedBadge" hidden>0</span></button>
+      <span class="label">Archived</span><span class="badge" id="archivedBadge" hidden>0</span></button>
   </nav>
   <div class="rail-foot">
-    <span id="refreshedAt" class="refreshed"></span>
-    <a href="/docs">API documentation</a>
-    <a href="/logout">Sign out</a>
+    <span id="refreshedAt" class="refreshed foot-label"></span>
+    <a href="/docs"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg> <span class="foot-label">API docs</span></a>
+    <a href="/logout"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg> <span class="foot-label">Sign out</span></a>
   </div>
 </aside>
-
 <div class="content">
 <div class="topbar">
   <h2 id="viewTitle">Overview</h2>
+  <span id="endpoint" class="muted" style="font-size:12px"></span>
   <div class="spacer"></div>
-  <span id="endpoint" class="muted"></span>
+  <div class="topbar-actions">
+    <button class="search-trigger" id="paletteTrigger" type="button" aria-label="Open command palette">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20L17 17"/></svg>
+      <span>Search…</span><kbd>⌘K</kbd>
+    </button>
+    <button class="icon-btn" id="themeToggle" title="Toggle theme" aria-label="Toggle theme">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></svg>
+    </button>
+    <button class="icon-btn" id="refreshBtn" title="Refresh" aria-label="Refresh">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v7h-7"/></svg>
+    </button>
+  </div>
 </div>
 <main>
-<div id="notice" class="notice" role="status"></div>
-
+<div id="notice" class="notice" role="status" aria-live="polite"></div>
+<div id="toastStack" aria-live="polite" aria-atomic="false"></div>
 <!-- ============ OVERVIEW ============ -->
 <div class="view active" id="view-overview">
   <div id="summary" class="summary-grid"></div>
-
   <section>
-    <div class="section-head"><div><h2>Garage version</h2><p class="muted">Running release compared with the newest upstream tag.</p></div></div>
-    <div id="versionCard" class="version-card muted">Loading…</div>
-    <div id="trafficCard" class="bucket-stats" style="margin-top:12px" hidden>
+    <div class="section-head"><div><h2>Capacity &amp; health</h2><p class="muted">Cluster storage and node status at a glance.</p></div><span id="capacityInline" class="muted" style="font-size:12px"></span></div>
+    <div style="display:grid;grid-template-columns:1.2fr .8fr;gap:14px" id="capacityRow">
+      <div id="capacityCard" style="display:flex;gap:16px;align-items:center;flex-wrap:wrap"></div>
+      <div id="healthCard" style="display:flex;flex-direction:column;gap:8px"></div>
+    </div>
+
+    // capacity ring + health (2.4)
+    try{
+      const capCard=document.getElementById('capacityCard');
+      const healthCard=document.getElementById('healthCard');
+      const capInline=document.getElementById('capacityInline');
+      if(capCard){
+        const buckets = data.buckets || [];
+        const totalBytes = buckets.reduce((s,b)=>s+(b.bytes||0),0);
+        const totalObjects = buckets.reduce((s,b)=>s+(b.objects||0),0);
+        const clusterCap = (data.cluster && data.cluster.capacityBytes) || null;
+        const pct = clusterCap ? Math.min(99, Math.round(totalBytes/clusterCap*100)) : null;
+        capCard.replaceChildren();
+        const ringWrap=document.createElement('div');
+        ringWrap.style.display='flex'; ringWrap.style.alignItems='center'; ringWrap.style.gap='14px';
+        const svgNS='http://www.w3.org/2000/svg';
+        const svg=document.createElementNS(svgNS,'svg'); svg.setAttribute('width','56'); svg.setAttribute('height','56'); svg.setAttribute('viewBox','0 0 36 36');
+        const bg=document.createElementNS(svgNS,'circle'); bg.setAttribute('cx','18'); bg.setAttribute('cy','18'); bg.setAttribute('r','15.5'); bg.setAttribute('fill','none'); bg.setAttribute('stroke','var(--surface-3)'); bg.setAttribute('stroke-width','3.5'); svg.append(bg);
+        if(pct!==null){
+          const fg=document.createElementNS(svgNS,'circle'); fg.setAttribute('cx','18'); fg.setAttribute('cy','18'); fg.setAttribute('r','15.5'); fg.setAttribute('fill','none'); fg.setAttribute('stroke', pct>85?'var(--bad)':pct>65?'var(--warn)':'var(--ok)'); fg.setAttribute('stroke-width','3.5'); fg.setAttribute('stroke-linecap','round'); fg.setAttribute('stroke-dasharray', pct+' '+(100-pct)); fg.setAttribute('transform','rotate(-90 18 18)'); svg.append(fg);
+        }
+        const txt=document.createElementNS(svgNS,'text'); txt.setAttribute('x','18'); txt.setAttribute('y','19'); txt.setAttribute('text-anchor','middle'); txt.setAttribute('dominant-baseline','middle'); txt.setAttribute('font-size','7'); txt.setAttribute('font-weight','800'); txt.setAttribute('fill','var(--text)'); txt.textContent=pct!==null?pct+'%':'\u2014'; svg.append(txt);
+        ringWrap.append(svg);
+        const meta=document.createElement('div');
+        meta.innerHTML='<div style="font-weight:750;font-size:14px">'+(pct!==null?pct+'% used':'Usage')+'</div><div class="muted" style="font-size:12.5px">'+bytes(totalBytes)+' across '+totalObjects.toLocaleString()+' objects</div>'+(clusterCap?'<div class="muted" style="font-size:11px">Capacity '+bytes(clusterCap)+'</div>':'<div class="muted" style="font-size:11px">No capacity limit reported</div>');
+        ringWrap.append(meta);
+        capCard.append(ringWrap);
+        if(healthCard){
+          healthCard.replaceChildren();
+          const nodes=(data.cluster && data.cluster.nodes) || [];
+          const hTitle=document.createElement('div'); hTitle.style.fontWeight='700'; hTitle.style.fontSize='13px'; hTitle.textContent='Cluster health';
+          healthCard.append(hTitle);
+          if(!nodes.length){ const m=document.createElement('div'); m.className='muted'; m.style.fontSize='12.5px'; m.textContent='No node details.'; healthCard.append(m);}
+          else nodes.slice(0,5).forEach(n=>{
+            const row=document.createElement('div'); row.style.display='flex'; row.style.alignItems='center'; row.style.gap='8px'; row.style.fontSize='12.5px';
+            const dot=document.createElement('span'); dot.style.width='8px'; dot.style.height='8px'; dot.style.borderRadius='50%'; dot.style.background=n.isHealthy===false?'var(--bad)':'var(--ok)'; row.append(dot, document.createTextNode((n.id||n.addr||'node') + (n.isHealthy===false?' \u00B7 unhealthy':'')));
+            healthCard.append(row);
+          });
+        }
+        if(capInline) capInline.textContent = pct!==null ? bytes(totalBytes)+' / '+bytes(clusterCap) : bytes(totalBytes);
+      }
+    } catch(e){ console.warn('capacity',e); }
+
+    <div id="trafficCard" class="bucket-stats" style="margin-top:14px" hidden>
       <div><b id="trafficRead">—</b><span>Data read from disk</span></div>
       <div><b id="trafficWritten">—</b><span>Data written to disk</span></div>
-      <div class="muted" style="align-self:center;font-size:11.5px">since the node started · source: Garage metrics</div>
+      <div class="muted" style="align-self:center;font-size:11.5px">since node start · Garage metrics</div>
     </div>
-   </section>
-
+  </section>
   <section>
-    <div class="section-head"><div><h2>Connection settings</h2><p class="muted">Common S3-compatible settings for clients. Secrets stay hidden.</p></div></div>
+    <div class="section-head"><div><h2>Garage version</h2><p class="muted">Running release compared with newest upstream tag.</p></div></div>
+    <div id="versionCard" class="version-card muted">Loading…</div>
+  </section>
+  <section>
+    <div class="section-head"><div><h2>Connection settings</h2><p class="muted">S3-compatible endpoints for clients. Secrets stay hidden.</p></div><button class="secondary small" id="copyAllSettings">Copy all</button></div>
     <div id="connectionSettings" class="settings-grid"></div>
   </section>
-
   <section id="cloudflaredSection" hidden>
     <div class="section-head"><div><h2>Cloudflared tunnel</h2><p class="muted">Optional tunnel status. Updating restarts the Garage tunnel briefly.</p></div><button id="updateCloudflared" class="secondary">Update Cloudflared</button></div>
     <div id="cloudflaredStatus" class="muted">Loading…</div>
   </section>
-
   <section id="resticSection" hidden>
-    <div class="section-head"><div><h2>Restic health checks</h2><p class="muted">Repositories are detected from their object layout. Checks run only on request.</p></div></div>
+    <div class="section-head"><div><h2>Restic health checks</h2><p class="muted">Repositories detected from object layout. Checks run only on request.</p></div></div>
     <div id="resticChecks"></div>
   </section>
 </div>
-
 <!-- ============ BUCKETS ============ -->
 <div class="view" id="view-buckets">
   <section>
-    <div class="section-head"><div><h2>Active buckets</h2><p class="muted">Click a bucket name to browse its files. Hover a friendly name to see the real Garage name. Archive hides a bucket immediately; its data stays for the grace period before purge.</p></div><button id="showArchive" class="danger">Archive bucket…</button></div>
+    <div class="section-head"><div><h2>Active buckets</h2><p class="muted">Search, sort, and manage. Click a name to browse. Hover a friendly name for the real Garage name.</p></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button id="bulkArchiveBtn" class="danger small" hidden>Archive selected</button>
+        <button id="showArchive" class="danger">Archive bucket…</button>
+      </div>
+    </div>
     <div id="archivePanel" class="danger-panel" hidden>
       <strong>Archive a bucket</strong>
       <div id="archiveHint" class="muted">Type the exact bucket name manually. Nothing is deleted until the grace period ends.</div>
       <div class="row"><input id="archiveName" placeholder="type exact bucket name" autocomplete="off" spellcheck="false"><button id="confirmArchive" class="danger">Archive</button><button id="cancelArchive" class="secondary">Cancel</button></div>
     </div>
-    <div id="bucketGrid" class="bucket-grid"><div class="muted bucket-grid-empty">Loading buckets…</div></div>
-    <div id="ageNote" class="muted"></div>
+    <div class="bucket-toolbar" id="bucketToolbar">
+      <input id="bucketSearch" type="search" placeholder="Search buckets…" autocomplete="off" spellcheck="false" aria-label="Search buckets">
+      <select id="bucketSort" aria-label="Sort buckets"><option value="name">Sort: Name</option><option value="size">Size</option><option value="objects">Objects</option><option value="freshness">Freshness</option></select>
+      <div class="seg" role="group" aria-label="Filter">
+        <button type="button" data-filter="all" class="active">All</button>
+        <button type="button" data-filter="fresh">Fresh</button>
+        <button type="button" data-filter="stale">Stale</button>
+        <button type="button" data-filter="empty">Empty</button>
+      </div>
+      <div class="seg" role="group" aria-label="Density">
+        <button type="button" data-density="comfortable" class="active" title="Comfortable">☷</button>
+        <button type="button" data-density="compact" title="Compact">☰</button>
+      </div>
+      <span id="bucketCount" class="muted" style="font-size:12px;margin-left:auto"></span>
+    </div>
+    <div id="bucketGrid" class="bucket-grid"><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card"></div><div class="skeleton skeleton-card"></div></div>
+    <div id="ageNote" class="muted" style="margin-top:10px;font-size:12.5px"></div>
     <div class="row">
       <input id="bucketName" placeholder="new-bucket-name" autocomplete="off" spellcheck="false" aria-label="New bucket name">
       <button id="createBucket">Create bucket</button>
     </div>
-  </section>
-
-<dialog id="browserSection" class="bucket-dialog">
+  </section><dialog id="browserSection" class="bucket-dialog">
     <div class="section-head"><div><h2 id="browserTitle">Bucket browser</h2><p id="browserHint" class="muted">Select a bucket to browse its objects.</p></div><button id="closeBrowser" class="secondary small">Close ✕</button></div>
-    <div class="dialog-toolbar">
+    <div id="browserCrumbs" class="crumbs" style="margin-bottom:8px"></div><div class="dialog-toolbar">
       <button id="browserUp" class="secondary small" disabled>↑ Up</button>
-      <button id="browserRefresh" class="secondary small">Refresh</button>
+      <button id="browserViewToggle" class="secondary small" title="Toggle grid/list">VIEW</button><button id="browserRefresh" class="secondary small">Refresh</button>
       <span id="browserStatus" class="status muted" style="margin-left:auto">Select a bucket to begin.</span>
       <input id="browserUpload" type="file" aria-label="Choose a file to upload">
       <button id="browserUploadButton" disabled>Upload here</button>
@@ -3539,122 +3648,85 @@ async function refresh() {
        box.append(el("div", "muted", "layout version " + text(cluster.layoutVersion)));
      }
      const grid = $("bucketGrid"); grid.replaceChildren();
-     (data.buckets || []).forEach(bucket => {
-       const bucketAlias = bucket.aliases[0] || "";
-       const displayName = bucket.friendlyName || bucketAlias || "(no alias)";
-       const card = el("div", "bucket-card");
-
-       // head: name + archive action
-       const head = el("div", "bucket-head");
-       const titleBox = el("div");
-       if (bucketAlias) {
-         const open = el("button", "bucket-open", displayName);
-         open.type = "button";
-         open.title = "Real Garage name: " + bucketAlias + " · click to browse files";
-         open.addEventListener("click", () => openBrowser(bucketAlias));
-         titleBox.append(open);
-       } else {
-         const missing = el("span", "bucket-open", displayName);
-         missing.title = "Garage bucket ID: " + bucket.id;
-         titleBox.append(missing);
-       }
-       titleBox.append(el("div", "bucket-id code", bucket.id.slice(0, 20) + "…"));
-       head.append(titleBox);
-       const bucketNameForArchive = bucketAlias;
-       if (bucketNameForArchive) {
-         const archive = el("button", "danger small", "Archive…");
-         archive.addEventListener("click", () => openArchive(bucketNameForArchive));
-         head.append(archive);
-       }
-       card.append(head);
-       if (bucket.error) card.append(el("div", "err", bucket.error));
-
-       // stats row: objects + size
-       const stats = el("div", "bucket-stats");
-       const objStat = el("div"); objStat.append(el("b", "", bucket.objects === null ? "—" : Number(bucket.objects).toLocaleString())); objStat.append(el("span", "", "objects"));
-       const sizeStat = el("div"); sizeStat.append(el("b", "", bytes(bucket.bytes))); sizeStat.append(el("span", "", "size"));
-       stats.append(objStat, sizeStat);
-       card.append(stats);
-
-       // usage bar
-       if (bucket.usagePercent !== null && bucket.usagePercent !== undefined) {
-         const value = Math.min(100, Math.max(0, Number(bucket.usagePercent)));
-         const bar = el("div", "usage-bar wide");
-         bar.title = percent(bucket.usagePercent) + " of configured Garage capacity";
-         const fill = document.createElement("span");
-         fill.style.width = value + "%";
-         bar.append(fill);
-         card.append(bar);
-       }
-
-       // latest file line
-       const latestLine = el("div", "bucket-line");
-       if (bucket.latestError) { latestLine.append(el("span", "err", "⚠ " + bucket.latestError.slice(0, 60))); latestLine.title = bucket.latestError; }
-       else if (bucket.latest === null) latestLine.append(el("span", "", "S3 listing off"));
-       else if (!(bucket.latest || []).length) latestLine.append(el("span", "", "No objects yet"));
-       else {
-         const file = bucket.latest[0];
-         const fresh = latestIsFresh(file.modified);
-         const clock = el("span", "latest-clock " + (fresh ? "fresh" : "stale"), "◷");
-         clock.title = fresh ? "Updated within the last 24 hours" : "Updated more than 24 hours ago";
-         const filename = el("code", "", shortFilename(file.key));
-         filename.title = file.key;
-         latestLine.append(clock, filename, el("span", "muted", ago(file.modified)));
-       }
-       card.append(latestLine);
-
-       // backup ages condensed
-       const backup = bucket.backup;
-       const backupLine = el("div", "bucket-line");
-       if (!backup) backupLine.append(el("span", "", "Backups: —"));
-       else if (backup.error) { backupLine.append(el("span", "err", "⚠ " + backup.error.slice(0, 55))); backupLine.title = backup.error; }
-       else {
-         const b = el("span", "", "Backup newest " + ago(backup.newest) + " · oldest " + ago(backup.oldest) + (backup.truncated ? " (capped)" : ""));
-         b.title = "Newest: " + stamp(backup.newest) + "\nOldest: " + stamp(backup.oldest);
-         backupLine.append(b);
-       }
-       card.append(backupLine);
-
-       // public link + keys tags on one compact block
-       const pub = bucket.public || {};
-       if (pub.path_style) {
-         const pubLine = el("div", "bucket-line");
-         const linkCode = el("code", "", pub.path_style.replace(/^https?:\/\//, ""));
-         linkCode.title = "Copy public path-style URL: " + pub.path_style;
-         const copyBtn = el("button", "secondary small", "Copy");
-         copyBtn.addEventListener("click", async () => {
-           try { await copyText(pub.path_style); notice("Copied public link."); }
-           catch (error) { notice(error.message, true); }
+     window.__bucketCache = (data.buckets || []).slice();
+     window.__selectedBuckets = window.__selectedBuckets || new Set();
+     window.__renderBucketGrid = function(list){
+       grid.replaceChildren();
+       (list||[]).forEach(bucket => {
+         const bucketId = bucket.id || "";
+         const bucketAlias = (bucket.aliases||[])[0] || "";
+         const bucketNameForArchive = bucketAlias;
+         const friendlyName = bucket.friendlyName || null;
+         const displayName = friendlyName || bucketAlias;
+         const card = el("div", "bucket-card");
+         if(window.__selectedBuckets && window.__selectedBuckets.has(bucketAlias)) card.classList.add("selected");
+         const head = el("div", "bucket-head");
+         const cb = document.createElement("input"); cb.type="checkbox"; cb.className="bucket-check"; cb.checked = !!(window.__selectedBuckets && window.__selectedBuckets.has(bucketAlias));
+         cb.addEventListener("change", () => {
+           if(!window.__selectedBuckets) window.__selectedBuckets=new Set();
+           if(cb.checked) window.__selectedBuckets.add(bucketAlias); else window.__selectedBuckets.delete(bucketAlias);
+           card.classList.toggle("selected", cb.checked);
+           const bulkBtn=document.getElementById("bulkArchiveBtn");
+           if(bulkBtn){ bulkBtn.hidden = window.__selectedBuckets.size===0; bulkBtn.textContent="Archive selected ("+window.__selectedBuckets.size+")"; }
          });
-         pubLine.append(el("span", "", "Public:"), linkCode, copyBtn);
-         card.append(pubLine);
-       }
-
-       const keysLine = el("div", "bucket-line");
-       (bucket.keys || []).slice(0, 4).forEach(key => {
-         const perms = [key.owner ? "owner" : null, key.read ? "r" : null, key.write ? "w" : null].filter(Boolean).join("/");
-         keysLine.append(el("span", "tag", (key.name || key.id) + (perms ? " " + perms : "")));
+         head.append(cb);
+         const title = el("div","bucket-title");
+         const nameBtn = el("button","bucket-open",displayName||"(unnamed)");
+         nameBtn.title = friendlyName ? (bucketAlias + " \u00B7 " + bucketId) : (bucketId || bucketAlias);
+         if(bucketAlias) nameBtn.addEventListener("click",()=>openBrowser(bucketAlias));
+         const nameRow = el("div","name"); const dot=el("span","dot"); dot.style.background = (bucket.objects||0)>0 ? "var(--ok)" : "var(--faint)"; nameRow.append(dot, nameBtn);
+         title.append(nameRow, el("div","id", bucketId || bucketAlias));
+         head.append(title);
+         const arch = el("button","danger small","Archive\u2026");
+         arch.addEventListener("click",()=>openArchive(bucketNameForArchive));
+         head.append(arch);
+         card.append(head);
+         if(bucket.error) card.append(el("div","err",bucket.error));
+         const stats=el("div","bucket-stats");
+         const objStat=el("div"); objStat.append(el("b","",bucket.objects===null?"\u2014":Number(bucket.objects).toLocaleString())); objStat.append(el("span","","objects"));
+         const sizeStat=el("div"); sizeStat.append(el("b","",bytes(bucket.bytes))); sizeStat.append(el("span","","size"));
+         stats.append(objStat,sizeStat); card.append(stats);
+         if(bucket.usagePercent!==null&&bucket.usagePercent!==undefined){
+           const v=Math.min(100,Math.max(0,Number(bucket.usagePercent))); const bar=el("div","usage-bar wide"); bar.title=percent(bucket.usagePercent)+" of capacity"; const fill=document.createElement("span"); fill.style.width=v+"%"; bar.append(fill); card.append(bar);
+         }
+         const latestLine=el("div","bucket-line");
+         if(bucket.latestError) { latestLine.append(el("span","err","\u26A0 "+bucket.latestError.slice(0,60))); latestLine.title=bucket.latestError; }
+         else if(bucket.latest===null) latestLine.append(el("span","","S3 listing off"));
+         else if(!(bucket.latest||[]).length) latestLine.append(el("span","","No objects yet"));
+         else { const file=bucket.latest[0]; const fresh=latestIsFresh(file.modified); const clock=el("span","latest-clock "+(fresh?"fresh":"stale"),"\u25F7"); clock.title=fresh?"Updated within 24h":"Stale"; const fn=el("code","",shortFilename(file.key)); fn.title=file.key; latestLine.append(clock,fn,el("span","muted",ago(file.modified))); }
+         card.append(latestLine);
+         const backup=bucket.backup; const backupLine=el("div","bucket-line");
+         if(!backup) backupLine.append(el("span","","Backups: \u2014"));
+         else if(backup.error){ backupLine.append(el("span","err","\u26A0 "+backup.error.slice(0,55))); backupLine.title=backup.error; }
+         else { const b=el("span","","Backup newest "+ago(backup.newest)+" \u00B7 oldest "+ago(backup.oldest)+(backup.truncated?" (capped)":"")); b.title="Newest: "+stamp(backup.newest)+"\nOldest: "+stamp(backup.oldest); backupLine.append(b); }
+         card.append(backupLine);
+         const pub=bucket.public||{}; if(pub.path_style){ const pubLine=el("div","bucket-line"); const linkCode=el("code","",pub.path_style.replace(/^https?:\/\//,"")); linkCode.title="Copy public URL: "+pub.path_style; const cp=el("button","secondary small","Copy"); cp.addEventListener("click",async()=>{try{await copyText(pub.path_style); showToast("Copied public link.","ok");}catch(e){showToast(e.message,"bad");}}); pubLine.append(el("span","","Public:"),linkCode,cp); card.append(pubLine); }
+         const keysLine=el("div","bucket-line"); (bucket.keys||[]).slice(0,4).forEach(key=>{ const perms=[key.owner?"owner":null,key.read?"r":null,key.write?"w":null].filter(Boolean).join("/"); keysLine.append(el("span","tag", (key.name||key.id)+(perms?" "+perms:""))); }); if((bucket.keys||[]).length>4) keysLine.append(el("span","tag","+"+(bucket.keys.length-4))); if(!(bucket.keys||[]).length) keysLine.append(el("span","","No key grants")); card.append(keysLine);
+         const actions=el("div","bucket-actions"); if(bucketAlias){ const br=el("button","secondary small","Browse"); br.addEventListener("click",()=>openBrowser(bucketAlias)); actions.append(br); } const nb=el("button","secondary small",bucket.friendlyName?"Rename":"Set name"); nb.type="button"; nb.addEventListener("click",()=>editFriendlyBucketName(bucket)); actions.append(nb); card.append(actions);
+         grid.append(card);
        });
-       if ((bucket.keys || []).length > 4) keysLine.append(el("span", "tag", "+" + (bucket.keys.length - 4)));
-       if (!(bucket.keys || []).length) keysLine.append(el("span", "", "No key grants"));
-       card.append(keysLine);
-
-       // actions
-       const actions = el("div", "bucket-actions");
-       if (bucketAlias) {
-         const browse = el("button", "secondary small", "Browse");
-         browse.addEventListener("click", () => openBrowser(bucketAlias));
-         actions.append(browse);
-       }
-       const nameButton = el("button", "secondary small", bucket.friendlyName ? "Rename" : "Set name");
-       nameButton.type = "button";
-       nameButton.addEventListener("click", () => editFriendlyBucketName(bucket));
-       actions.append(nameButton);
-       card.append(actions);
-
-       grid.append(card);
-     });
-     if (!(data.buckets || []).length) grid.append(el("div", "muted bucket-grid-empty", "No active buckets. Create one above."));
+       if(!(list||[]).length) grid.append(Object.assign(document.createElement("div"),{className:"empty-state",innerHTML:"<div class=\"muted\">No buckets match your filter.</div>"}));
+       const bc=document.getElementById("bucketCount"); if(bc) bc.textContent=(list||[]).length+" / "+(window.__bucketCache||[]).length+" buckets";
+     };
+     window.renderBucketsFiltered = function(){
+       const q=(document.getElementById("bucketSearch")?.value||"").toLowerCase().trim();
+       const sort=document.getElementById("bucketSort")?.value||"name";
+       const fm=window.__bucketFilter||"all";
+       let list=[...(window.__bucketCache||[])];
+       if(q) list=list.filter(b=>{const hay=[...((b.aliases||[])), b.friendlyName||"", b.id||""].join(" ").toLowerCase(); return hay.includes(q);});
+       if(fm==="fresh") list=list.filter(b=>b.latest&&b.latest[0]&&(Date.now()-new Date(b.latest[0].modified).getTime()<86400000));
+       else if(fm==="stale") list=list.filter(b=>b.latest&&b.latest[0]&&(Date.now()-new Date(b.latest[0].modified).getTime()>=86400000));
+       else if(fm==="empty") list=list.filter(b=>(b.objects||0)===0);
+       list.sort((a,b)=>{
+         if(sort==="size") return (b.bytes||0)-(a.bytes||0);
+         if(sort==="objects") return (b.objects||0)-(a.objects||0);
+         if(sort==="freshness"){ const ta=a.latest&&a.latest[0]?new Date(a.latest[0].modified).getTime():0; const tb=b.latest&&b.latest[0]?new Date(b.latest[0].modified).getTime():0; return tb-ta; }
+         const an=((a.aliases||[])[0]||a.friendlyName||a.id||""); const bn=((b.aliases||[])[0]||b.friendlyName||b.id||"");
+         return String(an).localeCompare(String(bn));
+       });
+       window.__renderBucketGrid(list);
+     };
+     window.renderBucketsFiltered();
      renderArchived(data.archivedBuckets || []);
      renderArchivedBadge((data.archivedBuckets || []).length);
      const note = $("ageNote");
@@ -3711,7 +3783,14 @@ async function refresh() {
    $("archiveName").value = ""; $("archiveName").focus();
  });
  $("cancelArchive").addEventListener("click", () => { $("archivePanel").hidden = true; });
- $("confirmArchive").addEventListener("click", async () => {
+ document.getElementById("bulkArchiveBtn")?.addEventListener("click", async () => {
+  const sel = window.__selectedBuckets ? Array.from(window.__selectedBuckets) : [];
+  if(!sel.length) return showToast("No buckets selected","bad");
+  if(!confirm("Archive "+sel.length+" selected bucket(s)?")) return;
+  for(const name of sel){ try{ await api("/api/buckets/archive",{method:"POST",body:JSON.stringify({name,confirmation:name})}); }catch(e){ showToast(e.message,"bad"); return; } }
+  window.__selectedBuckets.clear(); showToast("Archived "+sel.length+" bucket(s)","ok"); refresh();
+});
+$("confirmArchive").addEventListener("click", async () => {
    const name = $("archiveName").value.trim();
    if (!name) return notice("Type the exact bucket name first.", true);
    try {
@@ -3884,6 +3963,119 @@ document.querySelectorAll(".nav-btn[data-view]").forEach(btn => {
   btn.addEventListener("click", () => showView(btn.dataset.view));
 });
 showView((location.hash || "#overview").slice(1));
+/* === 2.4 shell: theme, rail, toasts, palette, bucket toolbar, crumbs === */
+(function(){
+  const rail=document.getElementById('rail');
+  const collapseBtn=document.getElementById('collapseBtn');
+  const themeToggle=document.getElementById('themeToggle');
+  const paletteTrigger=document.getElementById('paletteTrigger');
+  const refreshBtn=document.getElementById('refreshBtn');
+  if(collapseBtn&&rail){
+    if(localStorage.getItem('garage:rail')==='collapsed') rail.classList.add('collapsed');
+    collapseBtn.addEventListener('click',()=>{rail.classList.toggle('collapsed');localStorage.setItem('garage:rail',rail.classList.contains('collapsed')?'collapsed':'open');});
+  }
+  if(themeToggle){
+    const apply=t=>{if(t) document.documentElement.setAttribute('data-theme',t); else document.documentElement.removeAttribute('data-theme'); localStorage.setItem('garage:theme',t||'auto');};
+    const saved=localStorage.getItem('garage:theme'); if(saved&&saved!=='auto') apply(saved);
+    themeToggle.addEventListener('click',()=>{const cur=document.documentElement.getAttribute('data-theme'); const next=cur==='dark'?'light':cur==='light'?'':'dark'; apply(next); showToast(next?next+' theme':'auto theme','muted',2200);});
+  }
+  if(refreshBtn) refreshBtn.addEventListener('click',()=>{refreshBtn.animate([{transform:'rotate(0deg)'},{transform:'rotate(360deg)'}],{duration:500}); refresh();});
+  const copyAll=document.getElementById('copyAllSettings');
+  if(copyAll) copyAll.addEventListener('click',async()=>{const box=document.getElementById('connectionSettings'); const text=Array.from(box.querySelectorAll('.setting')).map(s=>s.innerText).join('\n'); try{await copyText(text); showToast('Connection settings copied','ok');}catch(e){showToast(e.message,'bad');}});
+  // toast
+  const stack=document.getElementById('toastStack');
+  const origNotice=window.notice;
+  function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+  window.showToast=window.toast=function(msg,kind,ttl){
+    kind=kind||'muted'; ttl=ttl==null?3400:ttl;
+    if(!stack){ if(origNotice) origNotice(msg,kind==='bad'); return; }
+    const el=document.createElement('div'); el.className='toast '+kind;
+    el.innerHTML='<span class="toast-dot"></span><span style="flex:1;min-width:0;word-break:break-word">'+esc(msg)+'</span><button class="ghost small" style="margin-left:8px;padding:2px 6px" aria-label="Dismiss">\u00d7</button>';
+    el.querySelector('button').addEventListener('click',()=>el.remove());
+    stack.append(el); while(stack.children.length>4) stack.firstElementChild.remove();
+    if(ttl) setTimeout(()=>el.remove(),ttl);
+    if(origNotice) origNotice(msg,kind==='bad');
+  };
+  // palette
+  const dlg=document.createElement('dialog'); dlg.className='palette'; dlg.id='palette';
+  dlg.innerHTML='<input id="paletteInput" placeholder="Jump to\u2026 buckets, keys, activity, or bucket name" autocomplete="off" spellcheck="false"><div id="paletteList" class="palette-list"></div>';
+  document.body.appendChild(dlg);
+  const pInput=dlg.querySelector('#paletteInput'); const pList=dlg.querySelector('#paletteList');
+  const paletteBase=()=>{
+    const buckets=(window.__bucketCache||[]).map(b=>({label:b.friendlyName||b.alias||b.name,desc:(b.objects??'\u2014')+' objects \u00b7 '+bytes(b.bytes),action:()=>{showView('buckets'); document.getElementById('bucketSearch')?.focus();}}));
+    const base=[
+      {label:'Overview',desc:'Dashboard & capacity',action:()=>showView('overview')},
+      {label:'Buckets',desc:'Browse & manage buckets',action:()=>showView('buckets')},
+      {label:'Access keys',desc:'S3 credentials',action:()=>showView('keys')},
+      {label:'API keys',desc:'Panel tokens',action:()=>showView('apikeys')},
+      {label:'Nodes & versions',desc:'Cluster health',action:()=>showView('cluster')},
+      {label:'Activity',desc:'Sign-ins & operator log',action:()=>showView('logs')},
+      {label:'Refresh data',desc:'Reload from Garage',action:()=>refresh()},
+      {label:'Create bucket',desc:'New bucket',action:()=>{showView('buckets'); document.getElementById('bucketName')?.focus();}},
+    ]; return [...base,...buckets.slice(0,20)];
+  };
+  let pIndex=0,pFiltered=[];
+  function renderPalette(q){
+    const items=paletteBase(); const qq=(q||'').toLowerCase();
+    pFiltered=qq?items.filter(i=>(i.label+' '+i.desc).toLowerCase().includes(qq)):items;
+    pFiltered=pFiltered.slice(0,12); pList.replaceChildren();
+    if(!pFiltered.length){ const d=document.createElement('div'); d.textContent='No matches'; d.className='muted'; d.style.padding='10px'; pList.append(d); return; }
+    pFiltered.forEach((it,idx)=>{const row=document.createElement('div'); row.className='palette-item'+(idx===pIndex?' active':''); row.innerHTML='<span style="flex:1"><b style="color:var(--text)">'+esc(it.label)+'</b><br><span style="font-size:12px">'+esc(it.desc)+'</span></span>'; row.addEventListener('click',()=>{dlg.close(); it.action();}); pList.append(row);});
+  }
+  function openPalette(){pIndex=0; renderPalette(''); dlg.showModal(); pInput.value=''; pInput.focus(); renderPalette('');}
+  if(paletteTrigger) paletteTrigger.addEventListener('click',openPalette);
+  document.addEventListener('keydown',e=>{
+    if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault(); if(dlg.open) dlg.close(); else openPalette();}
+    if(e.key==='?'&&!e.metaKey&&!e.ctrlKey&&!e.altKey&&['INPUT','SELECT','TEXTAREA'].indexOf(document.activeElement.tagName)===-1){e.preventDefault(); openPalette();}
+  });
+  pInput.addEventListener('input',()=>{pIndex=0; renderPalette(pInput.value);});
+  pInput.addEventListener('keydown',e=>{
+    if(e.key==='ArrowDown'){e.preventDefault(); pIndex=Math.min(pIndex+1,pFiltered.length-1); renderPalette(pInput.value);}
+    else if(e.key==='ArrowUp'){e.preventDefault(); pIndex=Math.max(pIndex-1,0); renderPalette(pInput.value);}
+    else if(e.key==='Enter'){e.preventDefault(); const it=pFiltered[pIndex]; if(it){dlg.close(); it.action();}}
+  });
+  dlg.addEventListener('click',e=>{if(e.target===dlg) dlg.close();});
+  // bucket toolbar
+  const bucketSearch=document.getElementById('bucketSearch');
+  const bucketSort=document.getElementById('bucketSort');
+  const bucketCount=document.getElementById('bucketCount');
+  const bucketGrid=document.getElementById('bucketGrid');
+  let filterMode='all';
+  document.querySelectorAll('[data-filter]').forEach(btn=>btn.addEventListener('click',()=>{
+    document.querySelectorAll('[data-filter]').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); filterMode=btn.dataset.filter; window.__bucketFilter=filterMode; if(window.renderBucketsFiltered) window.renderBucketsFiltered();
+  }));
+  document.querySelectorAll('[data-density]').forEach(btn=>btn.addEventListener('click',()=>{
+    document.querySelectorAll('[data-density]').forEach(b=>b.classList.remove('active')); btn.classList.add('active');
+    if(bucketGrid) bucketGrid.classList.toggle('compact',btn.dataset.density==='compact');
+    localStorage.setItem('garage:density',btn.dataset.density);
+  }));
+  const savedDensity=localStorage.getItem('garage:density');
+  if(savedDensity==='compact'&&bucketGrid){bucketGrid.classList.add('compact'); document.querySelectorAll('[data-density]').forEach(b=>b.classList.toggle('active',b.dataset.density===savedDensity));}
+  if(bucketSearch) bucketSearch.addEventListener('input',()=>window.renderBucketsFiltered&&window.renderBucketsFiltered());
+  if(bucketSort) bucketSort.addEventListener('change',()=>window.renderBucketsFiltered&&window.renderBucketsFiltered());
+  window.__bucketCache=[];
+  // crumbs live
+  const crumbsEl=document.getElementById('browserCrumbs');
+  if(crumbsEl){
+    setInterval(()=>{
+      const dlgEl=document.getElementById('browserSection');
+      if(!dlgEl||!dlgEl.open) return;
+      const prefix=window.browserPrefix||'';
+      const parts=prefix.split('/').filter(Boolean);
+      crumbsEl.replaceChildren();
+      const root=document.createElement('button'); root.className='secondary small'; root.textContent='root';
+      root.addEventListener('click',()=>{window.browserPrefix=''; window.browserNextToken=''; if(window.loadBrowser) window.loadBrowser();});
+      crumbsEl.append(root);
+      let acc='';
+      parts.forEach(p=>{
+        acc+=p+'/';
+        const sep=document.createElement('span'); sep.textContent='/'; sep.style.color='var(--faint)'; sep.style.margin='0 4px'; crumbsEl.append(sep);
+        const b=document.createElement('button'); b.className='ghost small'; b.textContent=p; const cur=acc; b.addEventListener('click',()=>{window.browserPrefix=cur; window.browserNextToken=''; if(window.loadBrowser) window.loadBrowser();}); crumbsEl.append(b);
+      });
+    },350);
+  }
+})();
+
 refresh(); setInterval(refresh, 30000);
 })();
 </script></body></html>"""
