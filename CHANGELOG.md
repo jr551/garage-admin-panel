@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.4.1 — 2026-08-24
+
+### Fix: palette and breadcrumb lexical bugs
+
+- Command palette bucket suggestions now correctly derive the label from `bucket.aliases[0]` (with `friendlyName` and `id` fallbacks), matching the fixed card renderer and the real Garage API shape (`aliases` array). Previously it read non-existent `bucket.alias`/`bucket.name` and rendered blank suggestions.
+- Breadcrumb folder navigation now correctly proxies the lexical `browserPrefix`/`browserBucket`/`loadBrowser` state to `window` via `defineProperty`, so crumbs reflect the actual prefix and clicks navigate folders.
+
+
 ## 2.4.0 — 2026-08-24
 
 ### Massive GUI overhaul + hardening

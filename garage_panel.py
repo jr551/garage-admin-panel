@@ -1855,7 +1855,7 @@ def grant_panel_browser_access(bucket_id: str) -> dict:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "GaragePanel/2.4.0"
+    server_version = "GaragePanel/2.4.1"
 
     def log_message(self, fmt: str, *args) -> None:  # keep the journal readable
         print("%s - %s" % (self.address_string(), fmt % args), flush=True)
@@ -2466,7 +2466,7 @@ def openapi_spec() -> dict:
         "openapi": "3.0.3",
         "info": {
             "title": "Garage admin panel API",
-            "version": "2.4.0",
+            "version": "2.4.1",
             "description": (
                 "Sign in with the panel form for a session cookie, or send "
                 "`Authorization: Bearer <api key>` for scripts. Create keys in "
@@ -3299,6 +3299,7 @@ PAGE = r"""<!doctype html>
    }
  }
  let browserBucket = "", browserPrefix = "", browserNextToken = "", browserFile = null, browserMaxUploadBytes = 0, browserCanWrite = false;
+  try{ Object.defineProperty(window, "browserPrefix", {get:()=>browserPrefix, set:v=>{browserPrefix=v}}); Object.defineProperty(window, "browserBucket", {get:()=>browserBucket, set:v=>{browserBucket=v}}); Object.defineProperty(window, "browserNextToken", {get:()=>browserNextToken, set:v=>{browserNextToken=v}}); window.loadBrowser = (...a)=>loadBrowser(...a); window.browserParent = browserParent; }catch(e){}
  function browserParent(prefix) {
    const trimmed = prefix.endsWith("/") ? prefix.slice(0, -1) : prefix;
    const slash = trimmed.lastIndexOf("/");
@@ -4002,7 +4003,7 @@ showView((location.hash || "#overview").slice(1));
   document.body.appendChild(dlg);
   const pInput=dlg.querySelector('#paletteInput'); const pList=dlg.querySelector('#paletteList');
   const paletteBase=()=>{
-    const buckets=(window.__bucketCache||[]).map(b=>({label:b.friendlyName||b.alias||b.name,desc:(b.objects??'\u2014')+' objects \u00b7 '+bytes(b.bytes),action:()=>{showView('buckets'); document.getElementById('bucketSearch')?.focus();}}));
+    const buckets=(window.__bucketCache||[]).map(b=>({label:b.friendlyName||((b.aliases||[])[0])||b.id,desc:(b.objects??'\u2014')+' objects \u00b7 '+bytes(b.bytes),action:()=>{showView('buckets'); document.getElementById('bucketSearch')?.focus();}}));
     const base=[
       {label:'Overview',desc:'Dashboard & capacity',action:()=>showView('overview')},
       {label:'Buckets',desc:'Browse & manage buckets',action:()=>showView('buckets')},
