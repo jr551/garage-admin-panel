@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.4.2 — 2026-08-24
+
+### Fix: defensive data handling and toast guard
+
+- `renderSummary` and bucket watchers now normalize `data.buckets`/`archivedBuckets` with `Array.isArray` before `reduce`/`forEach`/`filter`, preventing `TypeError` when a subsection degrades and keeping the Overview capacity donut healthy.
+- `showToast` now guards `origNotice` with `typeof === 'function'` so theme toggles and other toasts never throw `origNotice is not a function`.
+- Breadcrumb proxy and palette `aliases[0]` fixes carried forward from 2.4.1.
+
+
 ## 2.4.1 — 2026-08-24
 
 ### Fix: palette and breadcrumb lexical bugs

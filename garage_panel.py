@@ -1855,7 +1855,7 @@ def grant_panel_browser_access(bucket_id: str) -> dict:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "GaragePanel/2.4.1"
+    server_version = "GaragePanel/2.4.2"
 
     def log_message(self, fmt: str, *args) -> None:  # keep the journal readable
         print("%s - %s" % (self.address_string(), fmt % args), flush=True)
@@ -2466,7 +2466,7 @@ def openapi_spec() -> dict:
         "openapi": "3.0.3",
         "info": {
             "title": "Garage admin panel API",
-            "version": "2.4.1",
+            "version": "2.4.2",
             "description": (
                 "Sign in with the panel form for a session cookie, or send "
                 "`Authorization: Bearer <api key>` for scripts. Create keys in "
@@ -2963,47 +2963,6 @@ PAGE = r"""<!doctype html>
       <div id="healthCard" style="display:flex;flex-direction:column;gap:8px"></div>
     </div>
 
-    // capacity ring + health (2.4)
-    try{
-      const capCard=document.getElementById('capacityCard');
-      const healthCard=document.getElementById('healthCard');
-      const capInline=document.getElementById('capacityInline');
-      if(capCard){
-        const buckets = data.buckets || [];
-        const totalBytes = buckets.reduce((s,b)=>s+(b.bytes||0),0);
-        const totalObjects = buckets.reduce((s,b)=>s+(b.objects||0),0);
-        const clusterCap = (data.cluster && data.cluster.capacityBytes) || null;
-        const pct = clusterCap ? Math.min(99, Math.round(totalBytes/clusterCap*100)) : null;
-        capCard.replaceChildren();
-        const ringWrap=document.createElement('div');
-        ringWrap.style.display='flex'; ringWrap.style.alignItems='center'; ringWrap.style.gap='14px';
-        const svgNS='http://www.w3.org/2000/svg';
-        const svg=document.createElementNS(svgNS,'svg'); svg.setAttribute('width','56'); svg.setAttribute('height','56'); svg.setAttribute('viewBox','0 0 36 36');
-        const bg=document.createElementNS(svgNS,'circle'); bg.setAttribute('cx','18'); bg.setAttribute('cy','18'); bg.setAttribute('r','15.5'); bg.setAttribute('fill','none'); bg.setAttribute('stroke','var(--surface-3)'); bg.setAttribute('stroke-width','3.5'); svg.append(bg);
-        if(pct!==null){
-          const fg=document.createElementNS(svgNS,'circle'); fg.setAttribute('cx','18'); fg.setAttribute('cy','18'); fg.setAttribute('r','15.5'); fg.setAttribute('fill','none'); fg.setAttribute('stroke', pct>85?'var(--bad)':pct>65?'var(--warn)':'var(--ok)'); fg.setAttribute('stroke-width','3.5'); fg.setAttribute('stroke-linecap','round'); fg.setAttribute('stroke-dasharray', pct+' '+(100-pct)); fg.setAttribute('transform','rotate(-90 18 18)'); svg.append(fg);
-        }
-        const txt=document.createElementNS(svgNS,'text'); txt.setAttribute('x','18'); txt.setAttribute('y','19'); txt.setAttribute('text-anchor','middle'); txt.setAttribute('dominant-baseline','middle'); txt.setAttribute('font-size','7'); txt.setAttribute('font-weight','800'); txt.setAttribute('fill','var(--text)'); txt.textContent=pct!==null?pct+'%':'\u2014'; svg.append(txt);
-        ringWrap.append(svg);
-        const meta=document.createElement('div');
-        meta.innerHTML='<div style="font-weight:750;font-size:14px">'+(pct!==null?pct+'% used':'Usage')+'</div><div class="muted" style="font-size:12.5px">'+bytes(totalBytes)+' across '+totalObjects.toLocaleString()+' objects</div>'+(clusterCap?'<div class="muted" style="font-size:11px">Capacity '+bytes(clusterCap)+'</div>':'<div class="muted" style="font-size:11px">No capacity limit reported</div>');
-        ringWrap.append(meta);
-        capCard.append(ringWrap);
-        if(healthCard){
-          healthCard.replaceChildren();
-          const nodes=(data.cluster && data.cluster.nodes) || [];
-          const hTitle=document.createElement('div'); hTitle.style.fontWeight='700'; hTitle.style.fontSize='13px'; hTitle.textContent='Cluster health';
-          healthCard.append(hTitle);
-          if(!nodes.length){ const m=document.createElement('div'); m.className='muted'; m.style.fontSize='12.5px'; m.textContent='No node details.'; healthCard.append(m);}
-          else nodes.slice(0,5).forEach(n=>{
-            const row=document.createElement('div'); row.style.display='flex'; row.style.alignItems='center'; row.style.gap='8px'; row.style.fontSize='12.5px';
-            const dot=document.createElement('span'); dot.style.width='8px'; dot.style.height='8px'; dot.style.borderRadius='50%'; dot.style.background=n.isHealthy===false?'var(--bad)':'var(--ok)'; row.append(dot, document.createTextNode((n.id||n.addr||'node') + (n.isHealthy===false?' \u00B7 unhealthy':'')));
-            healthCard.append(row);
-          });
-        }
-        if(capInline) capInline.textContent = pct!==null ? bytes(totalBytes)+' / '+bytes(clusterCap) : bytes(totalBytes);
-      }
-    } catch(e){ console.warn('capacity',e); }
 
     <div id="trafficCard" class="bucket-stats" style="margin-top:14px" hidden>
       <div><b id="trafficRead">—</b><span>Data read from disk</span></div>
@@ -3261,7 +3220,7 @@ PAGE = r"""<!doctype html>
    const bucketSelect = $("grantBucket"), keySelect = $("grantKey");
    const previousBucket = bucketSelect.value, previousKey = keySelect.value;
    bucketSelect.replaceChildren(el("option", "", "Select bucket…"));
-   (data.buckets || []).forEach(bucket => {
+   (Array.isArray(data.buckets) ? data.buckets : []).forEach(bucket => {
      const option = el("option", "", (bucket.aliases[0] || "(no alias)") + " · " + bucket.id.slice(0, 16) + "…");
      option.value = bucket.id;
      bucketSelect.append(option);
@@ -3434,7 +3393,7 @@ PAGE = r"""<!doctype html>
  }
  function renderRestic(data) {
    const section = $("resticSection"), box = $("resticChecks");
-   const entries = data.resticEnabled ? (data.buckets || []).filter(bucket => bucket.restic && bucket.restic.detected) : [];
+   const entries = data.resticEnabled ? (Array.isArray(data.buckets) ? data.buckets : []).filter(bucket => bucket.restic && bucket.restic.detected) : [];
    section.hidden = !entries.length;
    box.replaceChildren();
    entries.forEach(bucket => {
@@ -3474,7 +3433,49 @@ PAGE = r"""<!doctype html>
    });
  }
  function renderSummary(data) {
-   const buckets = data.buckets || [], archived = data.archivedBuckets || [];
+    // capacity ring + health (2.4)
+    try{
+      const capCard=document.getElementById('capacityCard');
+      const healthCard=document.getElementById('healthCard');
+      const capInline=document.getElementById('capacityInline');
+      if(capCard){
+        const buckets = Array.isArray(data.buckets) ? data.buckets : [];
+        const totalBytes = buckets.reduce((s,b)=>s+(b.bytes||0),0);
+        const totalObjects = buckets.reduce((s,b)=>s+(b.objects||0),0);
+        const clusterCap = (data.cluster && data.cluster.capacityBytes) || null;
+        const pct = clusterCap ? Math.min(99, Math.round(totalBytes/clusterCap*100)) : null;
+        capCard.replaceChildren();
+        const ringWrap=document.createElement('div');
+        ringWrap.style.display='flex'; ringWrap.style.alignItems='center'; ringWrap.style.gap='14px';
+        const svgNS='http://www.w3.org/2000/svg';
+        const svg=document.createElementNS(svgNS,'svg'); svg.setAttribute('width','56'); svg.setAttribute('height','56'); svg.setAttribute('viewBox','0 0 36 36');
+        const bg=document.createElementNS(svgNS,'circle'); bg.setAttribute('cx','18'); bg.setAttribute('cy','18'); bg.setAttribute('r','15.5'); bg.setAttribute('fill','none'); bg.setAttribute('stroke','var(--surface-3)'); bg.setAttribute('stroke-width','3.5'); svg.append(bg);
+        if(pct!==null){
+          const fg=document.createElementNS(svgNS,'circle'); fg.setAttribute('cx','18'); fg.setAttribute('cy','18'); fg.setAttribute('r','15.5'); fg.setAttribute('fill','none'); fg.setAttribute('stroke', pct>85?'var(--bad)':pct>65?'var(--warn)':'var(--ok)'); fg.setAttribute('stroke-width','3.5'); fg.setAttribute('stroke-linecap','round'); fg.setAttribute('stroke-dasharray', pct+' '+(100-pct)); fg.setAttribute('transform','rotate(-90 18 18)'); svg.append(fg);
+        }
+        const txt=document.createElementNS(svgNS,'text'); txt.setAttribute('x','18'); txt.setAttribute('y','19'); txt.setAttribute('text-anchor','middle'); txt.setAttribute('dominant-baseline','middle'); txt.setAttribute('font-size','7'); txt.setAttribute('font-weight','800'); txt.setAttribute('fill','var(--text)'); txt.textContent=pct!==null?pct+'%':'\u2014'; svg.append(txt);
+        ringWrap.append(svg);
+        const meta=document.createElement('div');
+        meta.innerHTML='<div style="font-weight:750;font-size:14px">'+(pct!==null?pct+'% used':'Usage')+'</div><div class="muted" style="font-size:12.5px">'+bytes(totalBytes)+' across '+totalObjects.toLocaleString()+' objects</div>'+(clusterCap?'<div class="muted" style="font-size:11px">Capacity '+bytes(clusterCap)+'</div>':'<div class="muted" style="font-size:11px">No capacity limit reported</div>');
+        ringWrap.append(meta);
+        capCard.append(ringWrap);
+        if(healthCard){
+          healthCard.replaceChildren();
+          const nodes=(data.cluster && data.cluster.nodes) || [];
+          const hTitle=document.createElement('div'); hTitle.style.fontWeight='700'; hTitle.style.fontSize='13px'; hTitle.textContent='Cluster health';
+          healthCard.append(hTitle);
+          if(!nodes.length){ const m=document.createElement('div'); m.className='muted'; m.style.fontSize='12.5px'; m.textContent='No node details.'; healthCard.append(m);}
+          else nodes.slice(0,5).forEach(n=>{
+            const row=document.createElement('div'); row.style.display='flex'; row.style.alignItems='center'; row.style.gap='8px'; row.style.fontSize='12.5px';
+            const dot=document.createElement('span'); dot.style.width='8px'; dot.style.height='8px'; dot.style.borderRadius='50%'; dot.style.background=n.isHealthy===false?'var(--bad)':'var(--ok)'; row.append(dot, document.createTextNode((n.id||n.addr||'node') + (n.isHealthy===false?' \u00B7 unhealthy':'')));
+            healthCard.append(row);
+          });
+        }
+        if(capInline) capInline.textContent = pct!==null ? bytes(totalBytes)+' / '+bytes(clusterCap) : bytes(totalBytes);
+      }
+    } catch(e){ console.warn('capacity',e); }
+
+   const buckets = Array.isArray(data.buckets) ? data.buckets : [], archived = Array.isArray(data.archivedBuckets) ? data.archivedBuckets : [];
    const objectCount = buckets.reduce((total, bucket) => total + Number(bucket.objects || 0), 0);
    const byteCount = buckets.reduce((total, bucket) => total + Number(bucket.bytes || 0), 0);
    const summary = $("summary"); summary.replaceChildren();
@@ -3507,7 +3508,8 @@ function renderVersion(v) {
   else if (v.checkedAt) box.append(el("span", "version-note", "Checked " + ago(v.checkedAt) + "."));
 }
 function renderTraffic(t) {
-  const box = $("trafficCard"); if (!box) return;
+  
+const box = $("trafficCard"); if (!box) return;
   if (!t || !t.available) { box.hidden = true; return; }
   box.hidden = false;
   const read = $("trafficRead"), written = $("trafficWritten");
@@ -3649,7 +3651,7 @@ async function refresh() {
        box.append(el("div", "muted", "layout version " + text(cluster.layoutVersion)));
      }
      const grid = $("bucketGrid"); grid.replaceChildren();
-     window.__bucketCache = (data.buckets || []).slice();
+     window.__bucketCache = (Array.isArray(data.buckets) ? data.buckets : []).slice();
      window.__selectedBuckets = window.__selectedBuckets || new Set();
      window.__renderBucketGrid = function(list){
        grid.replaceChildren();
@@ -3728,8 +3730,8 @@ async function refresh() {
        window.__renderBucketGrid(list);
      };
      window.renderBucketsFiltered();
-     renderArchived(data.archivedBuckets || []);
-     renderArchivedBadge((data.archivedBuckets || []).length);
+     renderArchived(Array.isArray(data.archivedBuckets) ? data.archivedBuckets : []);
+     renderArchivedBadge((Array.isArray(data.archivedBuckets) ? data.archivedBuckets : []).length);
      const note = $("ageNote");
      if (!data.backupAges) note.textContent = "Backup ages are off — set S3_ACCESS_KEY and S3_SECRET_KEY in garage-panel.env to enable them.";
      else if ((data.backupBuckets || []).length) note.textContent = "Backup ages shown for: " + data.backupBuckets.join(", ");
@@ -3989,13 +3991,13 @@ showView((location.hash || "#overview").slice(1));
   function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
   window.showToast=window.toast=function(msg,kind,ttl){
     kind=kind||'muted'; ttl=ttl==null?3400:ttl;
-    if(!stack){ if(origNotice) origNotice(msg,kind==='bad'); return; }
+    if(!stack){ if(typeof origNotice === 'function') origNotice(msg, kind==='bad'); return; }
     const el=document.createElement('div'); el.className='toast '+kind;
     el.innerHTML='<span class="toast-dot"></span><span style="flex:1;min-width:0;word-break:break-word">'+esc(msg)+'</span><button class="ghost small" style="margin-left:8px;padding:2px 6px" aria-label="Dismiss">\u00d7</button>';
     el.querySelector('button').addEventListener('click',()=>el.remove());
     stack.append(el); while(stack.children.length>4) stack.firstElementChild.remove();
     if(ttl) setTimeout(()=>el.remove(),ttl);
-    if(origNotice) origNotice(msg,kind==='bad');
+    if(typeof origNotice === 'function') origNotice(msg, kind==='bad');
   };
   // palette
   const dlg=document.createElement('dialog'); dlg.className='palette'; dlg.id='palette';
