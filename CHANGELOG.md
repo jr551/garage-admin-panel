@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.6.0 — 2026-08-24
+
+### Calmer bucket cards — 1-column, details hidden
+
+- Grid default `1 column / 760px max` (was `420px` fill), `gap 20→24px`; cards `padding 20→24px`, `gap 14→16px` — large, airy, single-column.
+- Cards hide IDs/grants/public URL behind `<details>Disclosure</details>`; only name, stats, usage, latest file, and muted backup ages remain prominent.
+- Bright `Archive` red button moved into kebab `⋮` menu (secondary danger), reducing visual dominance; primary actions `Browse` + ghost `Rename` remain.
+- Vision-checked via live browser: buckets now calm, no equal-weight wall of buttons/tags.
+
+
 ## 2.5.0 — 2026-08-24
 
 ### Airier layout — less dense

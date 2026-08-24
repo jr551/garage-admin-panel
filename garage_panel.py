@@ -1855,7 +1855,7 @@ def grant_panel_browser_access(bucket_id: str) -> dict:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "GaragePanel/2.5.0"
+    server_version = "GaragePanel/2.6.0"
 
     def log_message(self, fmt: str, *args) -> None:  # keep the journal readable
         print("%s - %s" % (self.address_string(), fmt % args), flush=True)
@@ -2466,7 +2466,7 @@ def openapi_spec() -> dict:
         "openapi": "3.0.3",
         "info": {
             "title": "Garage admin panel API",
-            "version": "2.5.0",
+            "version": "2.6.0",
             "description": (
                 "Sign in with the panel form for a session cookie, or send "
                 "`Authorization: Bearer <api key>` for scripts. Create keys in "
@@ -2795,10 +2795,10 @@ PAGE = r"""<!doctype html>
  .seg button{padding:7px 12px;font-size:12.5px;font-weight:650;background:transparent;color:var(--muted);border:0;border-radius:0}
  .seg button.active{background:var(--accent);color:#fff}
  .seg button+button{border-left:1px solid var(--line)}
- .bucket-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(420px,100%),1fr));gap:20px}
- .bucket-grid.compact{grid-template-columns:repeat(auto-fill,minmax(min(340px,100%),1fr));gap:12px}
+ .bucket-grid{display:grid;grid-template-columns:1fr;gap:24px;max-width:760px;margin:0 auto}
+ .bucket-grid.compact{grid-template-columns:repeat(auto-fill,minmax(min(380px,100%),1fr));gap:16px}
  .bucket-grid.compact .bucket-card{padding:14px 16px}
- .bucket-card{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius);padding:20px 18px;display:flex;flex-direction:column;gap:14px;transition:border-color .15s,transform .15s,box-shadow .15s;position:relative}
+ .bucket-card{background:var(--surface-2);border:1px solid var(--line);border-radius:var(--radius);padding:24px 22px;display:flex;flex-direction:column;gap:16px;transition:border-color .15s,transform .15s,box-shadow .15s;position:relative}
  .bucket-card:hover{border-color:var(--line-strong);transform:translateY(-1px);box-shadow:var(--shadow-sm)}
  .bucket-card.selected{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-ring)}
  .bucket-head{display:flex;align-items:flex-start;gap:10px}
@@ -3678,11 +3678,20 @@ async function refresh() {
          nameBtn.title = friendlyName ? (bucketAlias + " \u00B7 " + bucketId) : (bucketId || bucketAlias);
          if(bucketAlias) nameBtn.addEventListener("click",()=>openBrowser(bucketAlias));
          const nameRow = el("div","name"); const dot=el("span","dot"); dot.style.background = (bucket.objects||0)>0 ? "var(--ok)" : "var(--faint)"; nameRow.append(dot, nameBtn);
-         title.append(nameRow, el("div","id", bucketId || bucketAlias));
+         // ID hidden behind hover only, not as separate line
+         title.append(nameRow);
          head.append(title);
-         const arch = el("button","danger small","Archive\u2026");
-         arch.addEventListener("click",()=>openArchive(bucketNameForArchive));
-         head.append(arch);
+         // Kebab menu for secondary/danger actions
+         const kebabWrap = el("div"); kebabWrap.style.position="relative"; kebabWrap.style.marginLeft="auto";
+         const kebab = el("button","ghost small","\u22EE"); kebab.title="More actions"; kebab.style.fontSize="16px"; kebab.style.padding="4px 8px";
+         const menu = el("div"); menu.style.position="absolute"; menu.style.right="0"; menu.style.top="100%"; menu.style.marginTop="4px"; menu.style.background="var(--surface)"; menu.style.border="1px solid var(--line-strong)"; menu.style.borderRadius="10px"; menu.style.boxShadow="var(--shadow)"; menu.style.padding="6px"; menu.style.display="none"; menu.style.minWidth="160px"; menu.style.zIndex="5";
+         const arch = el("button","ghost small","Archive\u2026"); arch.style.color="var(--bad)"; arch.style.width="100%"; arch.style.textAlign="left";
+         arch.addEventListener("click",()=>{ menu.style.display="none"; openArchive(bucketNameForArchive); });
+         menu.append(arch);
+         kebab.addEventListener("click", (e)=>{ e.stopPropagation(); menu.style.display = menu.style.display==="none" ? "block" : "none"; });
+         document.addEventListener("click", ()=>{ menu.style.display="none"; }, {once:true});
+         kebabWrap.append(kebab, menu);
+         head.append(kebabWrap);
          card.append(head);
          if(bucket.error) card.append(el("div","err",bucket.error));
          const stats=el("div","bucket-stats");
@@ -3698,14 +3707,23 @@ async function refresh() {
          else if(!(bucket.latest||[]).length) latestLine.append(el("span","","No objects yet"));
          else { const file=bucket.latest[0]; const fresh=latestIsFresh(file.modified); const clock=el("span","latest-clock "+(fresh?"fresh":"stale"),"\u25F7"); clock.title=fresh?"Updated within 24h":"Stale"; const fn=el("code","",shortFilename(file.key)); fn.title=file.key; latestLine.append(clock,fn,el("span","muted",ago(file.modified))); }
          card.append(latestLine);
-         const backup=bucket.backup; const backupLine=el("div","bucket-line");
-         if(!backup) backupLine.append(el("span","","Backups: \u2014"));
-         else if(backup.error){ backupLine.append(el("span","err","\u26A0 "+backup.error.slice(0,55))); backupLine.title=backup.error; }
-         else { const b=el("span","","Backup newest "+ago(backup.newest)+" \u00B7 oldest "+ago(backup.oldest)+(backup.truncated?" (capped)":"")); b.title="Newest: "+stamp(backup.newest)+"\nOldest: "+stamp(backup.oldest); backupLine.append(b); }
-         card.append(backupLine);
-         const pub=bucket.public||{}; if(pub.path_style){ const pubLine=el("div","bucket-line"); const linkCode=el("code","",pub.path_style.replace(/^https?:\/\//,"")); linkCode.title="Copy public URL: "+pub.path_style; const cp=el("button","secondary small","Copy"); cp.addEventListener("click",async()=>{try{await copyText(pub.path_style); showToast("Copied public link.","ok");}catch(e){showToast(e.message,"bad");}}); pubLine.append(el("span","","Public:"),linkCode,cp); card.append(pubLine); }
-         const keysLine=el("div","bucket-line"); (bucket.keys||[]).slice(0,4).forEach(key=>{ const perms=[key.owner?"owner":null,key.read?"r":null,key.write?"w":null].filter(Boolean).join("/"); keysLine.append(el("span","tag", (key.name||key.id)+(perms?" "+perms:""))); }); if((bucket.keys||[]).length>4) keysLine.append(el("span","tag","+"+(bucket.keys.length-4))); if(!(bucket.keys||[]).length) keysLine.append(el("span","","No key grants")); card.append(keysLine);
-         const actions=el("div","bucket-actions"); if(bucketAlias){ const br=el("button","secondary small","Browse"); br.addEventListener("click",()=>openBrowser(bucketAlias)); actions.append(br); } const nb=el("button","secondary small",bucket.friendlyName?"Rename":"Set name"); nb.type="button"; nb.addEventListener("click",()=>editFriendlyBucketName(bucket)); actions.append(nb); card.append(actions);
+         // Backup ages muted, less prominent
+         const backup=bucket.backup; if(backup && !backup.error){ const backupLine=el("div","bucket-line"); backupLine.style.opacity="0.85"; const b=el("span","muted","Backup newest "+ago(backup.newest)+" \u00B7 oldest "+ago(backup.oldest)+(backup.truncated?" (capped)":"")); b.title="Newest: "+stamp(backup.newest)+"\nOldest: "+stamp(backup.oldest); backupLine.append(b); card.append(backupLine); }
+         else if(backup && backup.error){ const backupLine=el("div","bucket-line"); backupLine.append(el("span","err","\u26A0 "+backup.error.slice(0,50))); backupLine.title=backup.error; card.append(backupLine); }
+         // Details disclosure for IDs/grants/public
+         const details = document.createElement("details"); details.style.marginTop="6px"; details.style.fontSize="12.5px";
+         const sum = document.createElement("summary"); sum.textContent="Details"; sum.style.cursor="pointer"; sum.style.color="var(--muted)"; sum.style.fontWeight="600"; sum.style.listStyle="none";
+         details.append(sum);
+         const detBox = el("div"); detBox.style.display="grid"; detBox.style.gap="6px"; detBox.style.marginTop="8px"; detBox.style.padding="10px"; detBox.style.background="var(--surface)"; detBox.style.border="1px solid var(--line)"; detBox.style.borderRadius="10px";
+         // ID line inside details
+         const idLine = el("div","muted"); idLine.style.fontFamily="var(--mono)"; idLine.style.fontSize="11px"; idLine.style.wordBreak="break-all"; idLine.textContent = bucketId;
+         idLine.title = bucketId; detBox.append(el("div","muted","ID:"), idLine);
+         // Public URL inside details
+         const pub=bucket.public||{}; if(pub.path_style){ const pubLine=el("div","bucket-line"); const linkCode=el("code","",pub.path_style.replace(/^https?:\/\//,"")); linkCode.title="Copy public URL: "+pub.path_style; const cp=el("button","secondary small","Copy"); cp.addEventListener("click",async()=>{try{await copyText(pub.path_style); showToast("Copied public link.","ok");}catch(e){showToast(e.message,"bad");}}); pubLine.append(el("span","muted","Public:"),linkCode,cp); detBox.append(pubLine); }
+         // Grants inside details
+         const keysLine=el("div","bucket-line"); (bucket.keys||[]).slice(0,6).forEach(key=>{ const perms=[key.owner?"owner":null,key.read?"r":null,key.write?"w":null].filter(Boolean).join("/"); keysLine.append(el("span","tag", (key.name||key.id)+(perms?" "+perms:""))); }); if((bucket.keys||[]).length>6) keysLine.append(el("span","tag","+"+(bucket.keys.length-6))); if(!(bucket.keys||[]).length) keysLine.append(el("span","muted","No grants")); detBox.append(el("div","muted","Grants:"), keysLine);
+         details.append(detBox); card.append(details);
+         const actions=el("div","bucket-actions"); if(bucketAlias){ const br=el("button","secondary small","Browse"); br.addEventListener("click",()=>openBrowser(bucketAlias)); actions.append(br); } const nb=el("button","ghost small",bucket.friendlyName?"Rename":"Set name"); nb.type="button"; nb.addEventListener("click",()=>editFriendlyBucketName(bucket)); actions.append(nb); card.append(actions);
          grid.append(card);
        });
        if(!(list||[]).length) grid.append(Object.assign(document.createElement("div"),{className:"empty-state",innerHTML:"<div class=\"muted\">No buckets match your filter.</div>"}));
