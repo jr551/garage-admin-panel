@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.5.0 — 2026-08-24
+
+### Airier layout — less dense
+
+- Buckets grid: `minmax 360→420px`, `gap 12→20px`; cards `padding 14→20px`, `gap 9→14px`; toolbar `padding 10→14px`, `gap 8→12px`; stats `gap 18→24px`.
+- Shell: `topbar 10→14px`, `main 20→28px / 1220→1280px`, `section 18→24px / 14→20px`, `summary gap 10→16px`, `stat 14→20px`; base `14→14.5px / 1.5→1.65`, radius `14→16px`.
+- Verified visually via live browser screenshots (vision-checked) — overview and buckets now breathe, no crowding.
+
+
 ## 2.4.2 — 2026-08-24
 
 ### Fix: defensive data handling and toast guard
