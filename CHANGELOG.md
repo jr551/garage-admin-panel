@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.6.1 — 2026-08-24
+
+### Fixes — review of 2.6.0
+
+- Restore `.latest-clock` CSS (dropped in 2.4.0): the ◷ freshness dot on bucket cards is green/amber again.
+- Restore `.version-note` / `.version-arrow` CSS (dropped in 2.4.0): "Up to date" note and update arrow styled again.
+- Fix kebab `⋮` menu listener leak: one delegated outside-click closer instead of a leaked `{once:true}` document listener per card per refresh; opening one menu now closes the others.
+
 ## 2.6.0 — 2026-08-24
 
 ### Calmer bucket cards — 1-column, details hidden

@@ -1855,7 +1855,7 @@ def grant_panel_browser_access(bucket_id: str) -> dict:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "GaragePanel/2.6.0"
+    server_version = "GaragePanel/2.6.1"
 
     def log_message(self, fmt: str, *args) -> None:  # keep the journal readable
         print("%s - %s" % (self.address_string(), fmt % args), flush=True)
@@ -2466,7 +2466,7 @@ def openapi_spec() -> dict:
         "openapi": "3.0.3",
         "info": {
             "title": "Garage admin panel API",
-            "version": "2.6.0",
+            "version": "2.6.1",
             "description": (
                 "Sign in with the panel form for a session cookie, or send "
                 "`Authorization: Bearer <api key>` for scripts. Create keys in "
@@ -2786,6 +2786,8 @@ PAGE = r"""<!doctype html>
  .version-chip{display:inline-flex;align-items:center;gap:7px;background:var(--surface-2);border:1px solid var(--line-strong);border-radius:99px;padding:6px 14px;font-weight:700;font-size:13px}
  .version-chip .dot{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 8px var(--ok)}
  .version-chip.update .dot{background:var(--warn);box-shadow:0 0 8px var(--warn)}
+.version-note{color:var(--muted);font-size:12.5px}
+.version-arrow{color:var(--faint);font-size:16px}
  .status{display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:12.5px}
  .status::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--muted)}
  .status.ok::before{background:var(--ok);box-shadow:0 0 6px var(--ok)}.status.bad::before{background:var(--bad)}
@@ -2811,6 +2813,8 @@ PAGE = r"""<!doctype html>
  .bucket-stats b{display:block;font-size:15px;font-weight:800}
  .bucket-stats span{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:650}
  .bucket-line{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px;min-width:0;max-width:100%}
+.latest-clock{font-size:17px;line-height:1;flex:0 0 auto}
+.latest-clock.fresh{color:var(--ok)}.latest-clock.stale{color:var(--warn)}
  .bucket-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto;padding-top:4px}
  .usage-bar.wide{width:100%;margin-top:0;height:5px}
  .usage-bar{height:4px;width:112px;margin-top:5px;border-radius:99px;background:var(--surface-3);overflow:hidden;border:1px solid var(--line)}
@@ -3682,16 +3686,16 @@ async function refresh() {
          title.append(nameRow);
          head.append(title);
          // Kebab menu for secondary/danger actions
-         const kebabWrap = el("div"); kebabWrap.style.position="relative"; kebabWrap.style.marginLeft="auto";
-         const kebab = el("button","ghost small","\u22EE"); kebab.title="More actions"; kebab.style.fontSize="16px"; kebab.style.padding="4px 8px";
-         const menu = el("div"); menu.style.position="absolute"; menu.style.right="0"; menu.style.top="100%"; menu.style.marginTop="4px"; menu.style.background="var(--surface)"; menu.style.border="1px solid var(--line-strong)"; menu.style.borderRadius="10px"; menu.style.boxShadow="var(--shadow)"; menu.style.padding="6px"; menu.style.display="none"; menu.style.minWidth="160px"; menu.style.zIndex="5";
-         const arch = el("button","ghost small","Archive\u2026"); arch.style.color="var(--bad)"; arch.style.width="100%"; arch.style.textAlign="left";
-         arch.addEventListener("click",()=>{ menu.style.display="none"; openArchive(bucketNameForArchive); });
-         menu.append(arch);
-         kebab.addEventListener("click", (e)=>{ e.stopPropagation(); menu.style.display = menu.style.display==="none" ? "block" : "none"; });
-         document.addEventListener("click", ()=>{ menu.style.display="none"; }, {once:true});
-         kebabWrap.append(kebab, menu);
-         head.append(kebabWrap);
+        const kebabWrap = el("div"); kebabWrap.style.position="relative"; kebabWrap.style.marginLeft="auto";
+        const kebab = el("button","ghost small","\u22EE"); kebab.title="More actions"; kebab.style.fontSize="16px"; kebab.style.padding="4px 8px";
+        const menu = el("div"); menu.style.position="absolute"; menu.style.right="0"; menu.style.top="100%"; menu.style.marginTop="4px"; menu.style.background="var(--surface)"; menu.style.border="1px solid var(--line-strong)"; menu.style.borderRadius="10px"; menu.style.boxShadow="var(--shadow)"; menu.style.padding="6px"; menu.style.display="none"; menu.style.minWidth="160px"; menu.style.zIndex="5";
+        const arch = el("button","ghost small","Archive\u2026"); arch.style.color="var(--bad)"; arch.style.width="100%"; arch.style.textAlign="left";
+        arch.addEventListener("click",()=>{ menu.style.display="none"; openArchive(bucketNameForArchive); });
+        menu.append(arch);
+        kebab.addEventListener("click", (e)=>{ e.stopPropagation(); const open = menu.style.display==="none"; document.querySelectorAll(".bucket-menu").forEach(m=>m.style.display="none"); menu.style.display = open ? "block" : "none"; });
+        menu.className="bucket-menu";
+        kebabWrap.append(kebab, menu);
+        head.append(kebabWrap);
          card.append(head);
          if(bucket.error) card.append(el("div","err",bucket.error));
          const stats=el("div","bucket-stats");
@@ -4075,6 +4079,8 @@ showView((location.hash || "#overview").slice(1));
   if(bucketSearch) bucketSearch.addEventListener('input',()=>window.renderBucketsFiltered&&window.renderBucketsFiltered());
   if(bucketSort) bucketSort.addEventListener('change',()=>window.renderBucketsFiltered&&window.renderBucketsFiltered());
   window.__bucketCache=[];
+  if(!window.__bucketMenuCloser){ window.__bucketMenuCloser=true; document.addEventListener('click',()=>{ document.querySelectorAll(".bucket-menu").forEach(m=>m.style.display="none"); }); }
+  if(bucketSearch) bucketSearch.addEventListener('input',()=>window.renderBucketsFiltered&&window.renderBucketsFiltered());
   // crumbs live
   const crumbsEl=document.getElementById('browserCrumbs');
   if(crumbsEl){
